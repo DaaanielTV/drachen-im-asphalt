@@ -1,5 +1,5 @@
-from src.characters.protagonist import Protagonist
-from src.characters.dragon import ViceCityDragon
+from src.game.renderer import GameRenderer
+from src.game.session import GameSession
 
 
 def show_main_help(protagonist):
@@ -97,10 +97,10 @@ def _handle_readability_menu(protagonist):
 
 
 def main():
-    print("=== WILLKOMMEN IN VICE CITY DRAGONS! ===")
-    print("Ein kriminelles Abenteuer inspiriert von GTA 6")
-    print("1. Neues Spiel starten")
-    print("2. Spiel laden")
+    renderer = GameRenderer()
+    session = GameSession(renderer=renderer)
+
+    renderer.render_start_menu()
     choice = input("Waehle eine Option (1-2): ")
 
     if choice == "1":
@@ -152,6 +152,9 @@ def main():
     else:
         print("Ungueltige Wahl! Neues Spiel wird gestartet.")
         hero_name = input("Gib den Namen deines Helden ein: ")
+        from src.characters.protagonist import Protagonist
+        from src.characters.dragon import ViceCityDragon
+
         protagonist = Protagonist(hero_name, "jason")
         protagonist.initialize_missions()
         dragon = ViceCityDragon()

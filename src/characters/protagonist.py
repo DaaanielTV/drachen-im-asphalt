@@ -1,4 +1,3 @@
-import json
 import time
 import random
 
@@ -9,6 +8,8 @@ from src.missions.mission_manager import MissionManager
 from src.missions.mission import Mission, MissionPhase
 from src.missions.mission_giver import MissionGiver
 from src.districts.district_manager import DistrictManager
+from src.game.mission_logic import MissionBoardService
+from src.game.persistence import GamePersistence
 from src.effects.drug_effect import DrugEffect
 from src.effects.dragon_hallucination import DragonHallucination
 from src.items.weapon import Weapon
@@ -80,6 +81,8 @@ class Protagonist:
         }
         self.consequence_manager = ConsequenceManager(self.story_flags["decision_flags"])
         self.mission_manager = MissionManager()
+        self.mission_board = MissionBoardService(self.mission_manager)
+        self.persistence = GamePersistence()
         self.district_manager = DistrictManager(self)
         self.current_district_context = None
         
@@ -2018,8 +2021,8 @@ class Protagonist:
         
         try:
             choice = int(input("Wähle eine Mission: ")) - 1
-            if 0 <= choice < len(available_missions):
-                mission = available_missions[choice]
+            mission = self.mission_board.select_mission(available_missions, choice)
+            if mission:
                 self.start_mission(mission)
             elif choice == len(available_missions):
                 return
@@ -2418,8 +2421,7 @@ class Protagonist:
         }
         
         try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(save_data, f, ensure_ascii=False, indent=2)
+            self.persistence.save_protagonist(self, filename)
             print(f"Spiel gespeichert als {filename}!")
         except Exception as e:
             print(f"Fehler beim Speichern: {e}")
@@ -2473,29 +2475,14 @@ class Protagonist:
             return False
     
     def save_dragon(self, dragon, filename="data/dragon.json"):
-        dragon_data = {
-            "stamina": dragon.stamina,
-            "defeated": dragon.defeated,
-            "manifestation": dragon.manifestation
-        }
-        
         try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(dragon_data, f, ensure_ascii=False, indent=2)
+            self.persistence.save_dragon(dragon, filename)
         except Exception as e:
             print(f"Fehler beim Speichern des Drachen: {e}")
     
     def load_dragon(self, filename="data/dragon.json"):
         try:
-            with open(filename, 'r', encoding='utf-8') as f:
-                dragon_data = json.load(f)
-            
-            dragon = ViceCityDragon()
-            dragon.stamina = dragon_data["stamina"]
-            dragon.defeated = dragon_data["defeated"]
-            dragon.manifestation = dragon_data.get("manifestation", "metaphorisch")
-            
-            return dragon
+            return self.persistence.load_dragon(filename)
         except FileNotFoundError:
             return ViceCityDragon()
         except Exception as e:
