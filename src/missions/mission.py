@@ -30,10 +30,11 @@ class MissionPhase:
 
 
 class Mission:
-    def __init__(self, name, chapter, difficulty, rewards, text_display_manager=None):
+    def __init__(self, name, chapter, difficulty, rewards, text_display_manager=None, district_name=None):
         self.name = name
         self.chapter = chapter
         self.difficulty = difficulty
+        self.district_name = district_name
         self.rewards = rewards
         self.text_display = text_display_manager or TextDisplayManager()
         self.phases = []
@@ -41,59 +42,37 @@ class Mission:
         self.failed_attempts = 0
         self.current_phase = 0
         self.available = False
-
-    def _get_character_action_bonus(self, protagonist, action_type):
-        character_bonuses = {
-            "jason": {
-                "ambush": 0.15,
-                "direct_assault": 0.12,
-                "silent_takedown": -0.03,
-                "distraction": 0.0,
-            },
-            "lucia": {
-                "ambush": 0.05,
-                "direct_assault": -0.04,
-                "silent_takedown": 0.15,
-                "distraction": 0.12,
-            },
-        }
-        return character_bonuses.get(protagonist.character_type, {}).get(action_type, 0.0)
-
-    def _calculate_action_success(self, phase, protagonist, action_profile):
-        success_chance = phase.base_success_chance + (protagonist.level * 0.05)
-        success_chance += (protagonist.combat_skill * 0.02) if phase.combat_check else 0
-        success_chance += (protagonist.stealth * 0.02) if phase.stealth_check else 0
-        success_chance += self._get_character_action_bonus(protagonist, action_profile.get("type", ""))
-        success_chance += action_profile.get("bonus", 0.0)
-        return max(0.05, min(0.95, success_chance))
-
-    def _choose_action_option(self, phase):
-        if not phase.action_options:
-            return None
-
-        print("\n[Taktik] Wähle deinen Ansatz:")
-        for i, option in enumerate(phase.action_options, start=1):
-            print(f"{i}. {option['name']} - {option['description']}")
-
-        try:
-            choice = int(input("Aktion wählen: ")) - 1
-            if 0 <= choice < len(phase.action_options):
-                return phase.action_options[choice]
-        except ValueError:
-            pass
-
-        print("Ungültige Wahl! Standardansatz wird verwendet.")
-        return phase.action_options[0]
+        self.required_flags_all = []
+        self.required_flags_any = []
+        self.blocked_flags = []
         
     def is_available(self, protagonist):
+        district_reputation_ok = True
+        if self.district_name:
+            district_reputation_ok = protagonist.get_district_reputation(self.district_name) >= -20
         return (protagonist.chapter >= self.chapter and 
                 not self.completed and 
-                self.available)
+                self.available and
+                district_reputation_ok)
+
+    def get_effective_difficulty(self, protagonist):
+        if not self.district_name:
+            return self.difficulty
+        district_rep = protagonist.get_district_reputation(self.district_name)
+        difficulty_modifier = 0
+        if district_rep <= -40:
+            difficulty_modifier = 2
+        elif district_rep <= -20:
+            difficulty_modifier = 1
+        elif district_rep >= 40:
+            difficulty_modifier = -1
+        return max(1, self.difficulty + difficulty_modifier)
     
     def start_mission(self, protagonist):
         self.current_phase = 0
+        effective_difficulty = self.get_effective_difficulty(protagonist)
         print(f"\n[MISSION] MISSION START: {self.name}")
-        print(f"Schwierigkeit: {'⭐' * self.difficulty}")
+        print(f"Schwierigkeit: {'⭐' * effective_difficulty}")
         time.sleep(2)
         return self.execute_current_phase(protagonist)
     
@@ -143,31 +122,19 @@ class Mission:
     
     def execute_action_phase(self, phase, protagonist):
         self.text_display.display_mission_text(phase.description)
-
-        chosen_action = self._choose_action_option(phase)
-        action_profile = chosen_action or {}
-        success_chance = self._calculate_action_success(phase, protagonist, action_profile)
-        risk = action_profile.get("risk", 0.0)
-
-        roll = random.random()
-        critical_success_threshold = min(0.98, success_chance + max(0.0, risk * 0.35))
-        critical_failure_threshold = max(0.02, success_chance - max(0.0, risk * 0.45))
-
-        if roll > critical_success_threshold:
-            print("\n[KRITISCHER ERFOLG] Riskanter Zug perfekt ausgeführt!")
-            bonus_rewards = dict(phase.success_rewards or {})
-            bonus_rewards["cash"] = bonus_rewards.get("cash", 0) + random.randint(100, 350)
-            self.apply_rewards(bonus_rewards, protagonist)
-            self.current_phase += 1
-            return self.execute_current_phase(protagonist)
-        elif roll < critical_failure_threshold:
-            print("\n[KRITISCHER FEHLER] Die Situation eskaliert komplett!")
-            heavy_consequences = dict(phase.failure_consequences or {})
-            heavy_consequences["stamina"] = heavy_consequences.get("stamina", 0) + random.randint(6, 12)
-            heavy_consequences["wanted_level"] = heavy_consequences.get("wanted_level", 0) + 1
-            self.apply_consequences(heavy_consequences, protagonist)
-            return self.handle_mission_failure(protagonist)
-        elif roll < success_chance:
+        
+        success_chance = phase.base_success_chance
+        effective_difficulty = self.get_effective_difficulty(protagonist)
+        success_chance += (protagonist.level * 0.05)
+        success_chance += (protagonist.combat_skill * 0.02) if phase.combat_check else 0
+        success_chance += (protagonist.stealth * 0.02) if phase.stealth_check else 0
+        success_chance -= (effective_difficulty - 1) * 0.04
+        
+        if self.district_name:
+            district_rep = protagonist.get_district_reputation(self.district_name)
+            success_chance += district_rep * 0.001
+        
+        if random.random() < success_chance:
             print(f"\n[ERFOLG] {phase.success_message}")
             if phase.success_rewards:
                 self.apply_rewards(phase.success_rewards, protagonist)
@@ -182,18 +149,11 @@ class Mission:
     def execute_escape_phase(self, phase, protagonist):
         self.text_display.display_mission_text(phase.description)
         protagonist.wanted_level = min(5, protagonist.wanted_level + phase.wanted_increase)
-
-        route_bonus = 0.0
-        if phase.allow_escape_route_planning:
-            route_choice = input("Fluchtroute planen? (ja/nein): ").strip().lower()
-            if route_choice == "ja":
-                print("Du investierst Zeit in Fluchtwege und Ablenkungsmanöver.")
-                protagonist.stamina = max(1, protagonist.stamina - 3)
-                route_bonus = 0.15 if protagonist.character_type == "lucia" else 0.08
-
-        character_escape_bonus = 0.07 if protagonist.character_type == "lucia" else 0.02
-        escape_chance = 0.4 + (protagonist.stealth * 0.03) - (protagonist.wanted_level * 0.1) + route_bonus + character_escape_bonus
-        escape_chance = max(0.05, min(0.92, escape_chance))
+        
+        escape_chance = 0.4 + (protagonist.stealth * 0.03) - (protagonist.wanted_level * 0.1)
+        if self.district_name:
+            district_rep = protagonist.get_district_reputation(self.district_name)
+            escape_chance += district_rep * 0.001
         
         if random.random() < escape_chance:
             print(f"\n[ERFOLG] {phase.escape_success_message}")
@@ -217,7 +177,11 @@ class Mission:
                     self.apply_rewards(choice['rewards'], protagonist)
                 if choice.get('consequences'):
                     self.apply_consequences(choice['consequences'], protagonist)
-                
+
+                if hasattr(protagonist, "journal"):
+                    protagonist.journal.record_choice(choice.get('text', ''), choice.get('response', ''))
+                    protagonist.update_journal_state()
+
                 self.current_phase += 1
                 return self.execute_current_phase(protagonist)
             else:
@@ -273,6 +237,9 @@ class Mission:
         if rewards.get('partner_trust'):
             protagonist.partner_trust = min(100, protagonist.partner_trust + rewards['partner_trust'])
             print(f"+{rewards['partner_trust']} Partner-Vertrauen")
+
+        if hasattr(protagonist, "journal"):
+            protagonist.update_journal_state()
     
     def apply_consequences(self, consequences, protagonist):
         if consequences.get('cash'):
@@ -287,6 +254,9 @@ class Mission:
         if consequences.get('partner_trust'):
             protagonist.partner_trust = max(0, protagonist.partner_trust - consequences['partner_trust'])
             print(f"-{consequences['partner_trust']} Partner-Vertrauen")
+
+        if hasattr(protagonist, "journal"):
+            protagonist.update_journal_state()
     
     def complete_mission(self, protagonist):
         self.completed = True
@@ -313,4 +283,7 @@ class Mission:
             protagonist.story_flags["first_mission_completed"] = True
             protagonist.story_manager.trigger_story_event("first_crime", protagonist)
         
+        if hasattr(protagonist, "journal"):
+            protagonist.update_journal_state()
+
         return True
