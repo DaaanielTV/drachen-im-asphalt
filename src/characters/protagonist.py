@@ -62,6 +62,26 @@ class Protagonist:
         else:
             self.combat_skill = 10
             self.stealth = 15
+        self.escape_route_bonus = 0.0
+
+    def _character_action_bonus(self, action_type):
+        bonuses = {
+            "jason": {
+                "ambush": 0.12,
+                "direct_assault": 0.10,
+                "silent_takedown": -0.03,
+                "distraction": 0.01,
+                "escape_route_planning": 0.03,
+            },
+            "lucia": {
+                "ambush": 0.05,
+                "direct_assault": -0.05,
+                "silent_takedown": 0.14,
+                "distraction": 0.13,
+                "escape_route_planning": 0.12,
+            },
+        }
+        return bonuses.get(self.character_type, {}).get(action_type, 0.0)
     
     def display_attributes(self):
         print(f"\n[SPIELER] {self.name.upper()} - {self.character_type.upper()}")
@@ -294,58 +314,72 @@ class Protagonist:
             self.flee_police(police_type)
         elif action == "bestechen":
             self.bribe_police(police_type)
+        elif action == "ambush":
+            self.ambush_police(police_type)
+        elif action == "ablenken":
+            self.distraction_escape(police_type)
+        elif action == "silent":
+            self.silent_takedown(police_type)
+        elif action == "route":
+            self.plan_escape_route(police_type)
         else:
             print("Du zögerst zu lange!")
             self.combat_police(police_type)
+
+    def _police_action_prompt(self):
+        return input(
+            "Aktion: kämpfen, fliehen, bestechen, ambush, ablenken, silent oder route? "
+        ).strip().lower()
     
     def police_encounter(self):
         print("\n[POLICE] POLIZEI-KONFRONTATION")
-        action = input("Möchtest du kämpfen, fliehen oder bestechen? (kämpfen/fliehen/bestechen) ")
+        action = self._police_action_prompt()
         self._handle_police_choice("police", action)
     
     def security_encounter(self):
         print("\n[SECURITY] SICHERHEITS-KONFRONTATION")
-        action = input("Möchtest du kämpfen, fliehen oder bestechen? (kämpfen/fliehen/bestechen) ")
+        action = self._police_action_prompt()
         self._handle_police_choice("security", action)
     
     def motel_security_encounter(self):
         print("\n[MOTEL] MOTEL-SICHERHEITS-KONFRONTATION")
-        action = input("Möchtest du kämpfen, fliehen oder bestechen? (kämpfen/fliehen/bestechen) ")
+        action = self._police_action_prompt()
         self._handle_police_choice("motel_security", action)
     
     def swat_encounter(self):
         print("\n[SWAT] SWAT-KONFRONTATION")
-        action = input("Möchtest du kämpfen, fliehen oder bestechen? (kämpfen/fliehen/bestechen) ")
+        action = self._police_action_prompt()
         self._handle_police_choice("swat", action)
     
     def dock_security_encounter(self):
         print("\n[DOCK] DOCK-SICHERHEITS-KONFRONTATION")
-        action = input("Möchtest du kämpfen, fliehen oder bestechen? (kämpfen/fliehen/bestechen) ")
+        action = self._police_action_prompt()
         self._handle_police_choice("dock_security", action)
     
     def customs_encounter(self):
         print("\n[CUSTOMS] ZOLL-KONFRONTATION")
-        action = input("Möchtest du kämpfen, fliehen oder bestechen? (kämpfen/fliehen/bestechen) ")
+        action = self._police_action_prompt()
         self._handle_police_choice("customs", action)
     
     def container_guard_encounter(self):
         print("\n[CONTAINER] CONTAINER-WÄCHTER-KONFRONTATION")
-        action = input("Möchtest du kämpfen, fliehen oder bestechen? (kämpfen/fliehen/bestechen) ")
+        action = self._police_action_prompt()
         self._handle_police_choice("container_guard", action)
     
     def private_security_encounter(self):
         print("\n[PRIVATE] PRIVATE-SICHERHEITS-KONFRONTATION")
-        action = input("Möchtest du kämpfen, fliehen oder bestechen? (kämpfen/fliehen/bestechen) ")
+        action = self._police_action_prompt()
         self._handle_police_choice("private_security", action)
     
     def coast_guard_encounter(self):
         print("\n[COAST] KÜSTENWACHE-KONFRONTATION")
-        action = input("Möchtest du kämpfen, fliehen oder bestechen? (kämpfen/fliehen/bestechen) ")
+        action = self._police_action_prompt()
         self._handle_police_choice("coast_guard", action)
     
     def combat_police(self, police_type):
         stats = self._get_police_stats(police_type)
-        combat_chance = 0.3 + (self.combat_skill * 0.02) + (len(self.inventory) * 0.05)
+        combat_chance = 0.3 + (self.combat_skill * 0.02) + (len(self.inventory) * 0.05) + self._character_action_bonus("direct_assault")
+        combat_chance = max(0.05, min(0.92, combat_chance))
         
         if random.random() < combat_chance:
             print(f"Du besiegst die {police_type}-Einheit!")
@@ -369,13 +403,71 @@ class Protagonist:
                 self.dragon_encounters += 1
     
     def flee_police(self, police_type):
-        flee_chance = 0.5 + (self.stealth * 0.03) - (self.wanted_level * 0.1)
+        flee_chance = (
+            0.5
+            + (self.stealth * 0.03)
+            - (self.wanted_level * 0.1)
+            + self.escape_route_bonus
+            + self._character_action_bonus("escape_route_planning")
+        )
+        flee_chance = max(0.05, min(0.92, flee_chance))
+        self.escape_route_bonus = 0.0
         
         if random.random() < flee_chance:
             print("Du kannst erfolgreich entkommen!")
             self.stamina = max(1, self.stamina - 10)
         else:
             print("Deine Flucht schlägt fehl!")
+            self.combat_police(police_type)
+
+    def plan_escape_route(self, police_type):
+        print("Du analysierst Nebenstraßen, Kamerawinkel und mögliche Deckung.")
+        route_roll = 0.45 + (self.stealth * 0.02) + self._character_action_bonus("escape_route_planning")
+        if random.random() < route_roll:
+            self.escape_route_bonus = min(0.25, self.escape_route_bonus + 0.16)
+            self.stamina = max(1, self.stamina - 2)
+            print("Fluchtroute vorbereitet! Deine nächste Flucht ist deutlich besser.")
+            self.flee_police(police_type)
+        else:
+            print("Die Route ist schlecht gewählt - ihr habt dich fast eingekesselt.")
+            self.wanted_level = min(5, self.wanted_level + 1)
+            self.flee_police(police_type)
+
+    def ambush_police(self, police_type):
+        print("Du setzt auf einen riskanten Hinterhalt.")
+        ambush_chance = 0.35 + (self.combat_skill * 0.02) + self._character_action_bonus("ambush")
+        if random.random() < ambush_chance:
+            loot = random.randint(150, 350)
+            self.cash += loot
+            self.reputation += 6
+            self.wanted_level = min(5, self.wanted_level + 2)
+            print(f"Hinterhalt erfolgreich! Du sicherst ${loot}, aber die Stadt redet darüber.")
+        else:
+            print("Der Hinterhalt scheitert, Verstärkung trifft ein!")
+            self.wanted_level = min(5, self.wanted_level + 2)
+            self.combat_police(police_type)
+
+    def distraction_escape(self, police_type):
+        print("Du erzeugst eine Ablenkung, um ungesehen abzutauchen.")
+        distraction_chance = 0.4 + (self.stealth * 0.03) + self._character_action_bonus("distraction")
+        if random.random() < distraction_chance:
+            self.stamina = max(1, self.stamina - 4)
+            self.wanted_level = max(0, self.wanted_level - 1)
+            print("Ablenkung gelungen! Die Verfolger verlieren deine Spur.")
+        else:
+            print("Die Ablenkung klappt nicht.")
+            self.flee_police(police_type)
+
+    def silent_takedown(self, police_type):
+        print("Du versuchst einen lautlosen Takedown auf den Anführer.")
+        takedown_chance = 0.32 + (self.stealth * 0.03) + self._character_action_bonus("silent_takedown")
+        if random.random() < takedown_chance:
+            self.reputation += 4
+            self.stamina = max(1, self.stamina - 5)
+            print("Silent Takedown erfolgreich! Das Team ist kurz desorientiert.")
+            self.distraction_escape(police_type)
+        else:
+            print("Takedown fehlgeschlagen! Nahkampf bricht aus.")
             self.combat_police(police_type)
     
     def bribe_police(self, police_type):
@@ -535,9 +627,40 @@ class Protagonist:
         
         if action == "ja":
             if self.stamina >= opp["stamina_cost"]:
-                success_chance = 0.6 + (self.stealth * 0.02) - (district.danger_level * 0.05)
-                
-                if random.random() < success_chance:
+                print("Ansatz: 1) Ablenkung 2) Silent Takedown 3) Ambush")
+                tactic_choice = input("Wähle Taktik (1-3): ").strip()
+                tactic_map = {
+                    "1": ("distraction", 0.08, 0.35),
+                    "2": ("silent_takedown", 0.1, 0.45),
+                    "3": ("ambush", 0.07, 0.55),
+                }
+                tactic, tactic_bonus, tactic_risk = tactic_map.get(tactic_choice, ("distraction", 0.05, 0.3))
+
+                success_chance = (
+                    0.6
+                    + (self.stealth * 0.02)
+                    - (district.danger_level * 0.05)
+                    + tactic_bonus
+                    + self._character_action_bonus(tactic)
+                )
+                success_chance = max(0.08, min(0.95, success_chance))
+
+                roll = random.random()
+                critical_success = min(0.98, success_chance + tactic_risk * 0.35)
+                critical_failure = max(0.02, success_chance - tactic_risk * 0.5)
+
+                if roll > critical_success:
+                    jackpot = int(opp["cash"] * 1.8)
+                    print(f"Kritischer Erfolg! Dein riskanter Plan bringt ${jackpot}!")
+                    self.cash += jackpot
+                    self.reputation += 5
+                    self.stamina -= opp["stamina_cost"]
+                elif roll < critical_failure:
+                    print("Kritischer Fehler! Die Aktion eskaliert komplett.")
+                    self.wanted_level = min(5, self.wanted_level + 2)
+                    self.stamina = max(1, self.stamina - opp["stamina_cost"] - 10)
+                    self.cash = max(0, self.cash - random.randint(50, 200))
+                elif roll < success_chance:
                     print(f"Erfolg! Du erhältst ${opp['cash']}!")
                     self.cash += opp["cash"]
                     self.reputation += 2
@@ -1432,6 +1555,11 @@ class Protagonist:
         phase3.failure_message = "Die Alarmanlage geht los! Die Nachbarn werden aufmerksam!"
         phase3.success_rewards = {"reputation": 2}
         phase3.failure_consequences = {"wanted_level": 1, "stamina": 5}
+        phase3.action_options = [
+            {"name": "Ablenkung", "type": "distraction", "description": "Du löst einen Alarm am Nachbarhaus aus.", "bonus": 0.08, "risk": 0.35},
+            {"name": "Silent Takedown", "type": "silent_takedown", "description": "Du schaltest den einzigen Zeugen lautlos aus.", "bonus": 0.12, "risk": 0.45},
+            {"name": "Direkter Zugriff", "type": "direct_assault", "description": "Du gehst schnell und aggressiv vor.", "bonus": 0.05, "risk": 0.55}
+        ]
         
         phase4 = MissionPhase(
             "Flucht",
@@ -1441,6 +1569,7 @@ class Protagonist:
         phase4.wanted_increase = 2
         phase4.escape_success_message = "Du erreichst Ricos Garage und verlierst die Verfolger!"
         phase4.escape_failure_message = "Die Polizei stellt dich! Du musst das Auto verlassen und zu Fuß fliehen."
+        phase4.allow_escape_route_planning = True
         
         mission.phases = [phase1, phase2, phase3, phase4]
         self.mission_manager.register_mission(mission)
@@ -1476,6 +1605,11 @@ class Protagonist:
         phase2.success_message = "Du findest die Drogen in einem Rucksack hinter einem Beach Bar."
         phase2.failure_message = "Ein Viper Gangmitglied entdeckt dich! Die Alarmglocken läuten!"
         phase2.failure_consequences = {"wanted_level": 1, "stamina": 8}
+        phase2.action_options = [
+            {"name": "Ambush", "type": "ambush", "description": "Du lockst zwei Wachen in eine Sackgasse.", "bonus": 0.09, "risk": 0.40},
+            {"name": "Ablenkung", "type": "distraction", "description": "Du erzeugst ein Party-Chaos als Deckung.", "bonus": 0.12, "risk": 0.45},
+            {"name": "Silent Takedown", "type": "silent_takedown", "description": "Du neutralisierst einzelne Vipers lautlos.", "bonus": 0.11, "risk": 0.42}
+        ]
         
         phase3 = MissionPhase(
             "Die Konfrontation",
@@ -1488,6 +1622,10 @@ class Protagonist:
         phase3.failure_message = "Du wirst überwältigt und musst die Drogen zurücklassen!"
         phase3.success_rewards = {"reputation": 3}
         phase3.failure_consequences = {"stamina": 12, "partner_trust": 5}
+        phase3.action_options = [
+            {"name": "Ambush", "type": "ambush", "description": "Du attackierst aus der Deckung im richtigen Moment.", "bonus": 0.08, "risk": 0.45},
+            {"name": "Direkter Angriff", "type": "direct_assault", "description": "Du zwingst die Vipers mit Gewalt zurück.", "bonus": 0.1, "risk": 0.5}
+        ]
         
         phase4 = MissionPhase(
             "Polizeiflucht",
@@ -1497,6 +1635,7 @@ class Protagonist:
         phase4.wanted_increase = 2
         phase4.escape_success_message = "Du verlierst die Polizei in den engen Gassen von Ocean Beach!"
         phase4.escape_failure_message = "Die Polizei stellt dich! Du landest kurzzeitig in Gewahrsam."
+        phase4.allow_escape_route_planning = True
         
         mission.phases = [phase1, phase2, phase3, phase4]
         mission.available = False
