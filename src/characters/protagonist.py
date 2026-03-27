@@ -43,6 +43,24 @@ class Protagonist:
         self.chapter = 1
         self.partner_trust = 100
         self.ankle_monitor = character_type == "lucia"
+        self.dragon_defeated = False
+        
+        self.ng_plus_unlocked = False
+        self.new_game_plus_active = False
+        self.new_game_plus_cycle = 0
+        self.mission_modifier = "standard"
+        self.district_condition = "normal"
+        self.endgame_report = {}
+        self.branch_choices = []
+        self.run_completed = False
+        self.run_history = {
+            "runs_completed": 0,
+            "victories": 0,
+            "defeats": 0,
+            "highest_wanted": 0,
+            "highest_reputation": 0,
+            "lowest_partner_trust": 100
+        }
         
         self.text_display = TextDisplayManager()
         self.story_manager = StoryManager(self.text_display)
@@ -64,6 +82,7 @@ class Protagonist:
             self.stealth = 15
     
     def display_attributes(self):
+        self.update_run_tracking()
         print(f"\n[SPIELER] {self.name.upper()} - {self.character_type.upper()}")
         print(f"[CASH] Cash: ${self.cash}")
         print(f"[LEVEL] Level: {self.level}")
@@ -74,11 +93,61 @@ class Protagonist:
         print(f"[TAGE] Tage in Vice City: {self.days}")
         print(f"[DRACHEN] Drachen-Begegnungen: {self.dragon_encounters}")
         print(f"[PARTNER] Partner-Vertrauen: {self.partner_trust}%")
+        print(f"[MODUS] NG+ aktiv: {'Ja' if self.new_game_plus_active else 'Nein'} (Zyklus {self.new_game_plus_cycle})")
+        print(f"[MODIFIER] Missionen: {self.mission_modifier} | Distrikte: {self.district_condition}")
         if self.ankle_monitor:
             print("[FUSSFESSEL] Fußfessel aktiv (Einschränkungen bei Aktivitäten)")
     
     def switch_character(self):
         pass
+    
+    def update_run_tracking(self):
+        self.run_history["highest_wanted"] = max(self.run_history["highest_wanted"], self.wanted_level)
+        self.run_history["highest_reputation"] = max(self.run_history["highest_reputation"], self.reputation)
+        self.run_history["lowest_partner_trust"] = min(self.run_history["lowest_partner_trust"], self.partner_trust)
+    
+    def record_branch_choice(self, mission_name, phase_name, choice_text):
+        self.branch_choices.append({
+            "mission": mission_name,
+            "phase": phase_name,
+            "choice": choice_text
+        })
+    
+    def get_mission_success_modifier(self):
+        modifiers = {
+            "standard": 0.0,
+            "clean_getaway": -0.05,
+            "heat_wave": -0.12,
+            "all_or_nothing": -0.18
+        }
+        return modifiers.get(self.mission_modifier, 0.0)
+    
+    def get_escape_modifier(self):
+        modifiers = {
+            "standard": 0.0,
+            "clean_getaway": 0.08,
+            "heat_wave": -0.1,
+            "all_or_nothing": -0.15
+        }
+        return modifiers.get(self.mission_modifier, 0.0)
+    
+    def get_reward_multiplier(self):
+        multipliers = {
+            "standard": 1.0,
+            "clean_getaway": 1.2,
+            "heat_wave": 1.35,
+            "all_or_nothing": 1.6
+        }
+        return multipliers.get(self.mission_modifier, 1.0)
+    
+    def get_district_pressure_multiplier(self):
+        conditions = {
+            "normal": 1.0,
+            "crackdown": 1.25,
+            "blackout": 1.45,
+            "martial_law": 1.65
+        }
+        return conditions.get(self.district_condition, 1.0)
     
     def rest(self, location="sicherer Unterschlupf"):
         print(f"\n[RUHEN] Du ruhst dich in {location} aus...")
@@ -130,7 +199,8 @@ class Protagonist:
             self.stamina = max(1, self.stamina - 5)
             return
         
-        encounter_chance = 0.3 + (district.danger_level * 0.1)
+        encounter_chance = (0.3 + (district.danger_level * 0.1)) * self.get_district_pressure_multiplier()
+        encounter_chance = min(0.95, encounter_chance)
         
         if random.random() < encounter_chance:
             self.criminal_encounter(district)
@@ -168,7 +238,8 @@ class Protagonist:
             self.stamina = max(1, self.stamina - 5)
             return
         
-        encounter_chance = 0.3 + (district.danger_level * 0.1)
+        encounter_chance = (0.3 + (district.danger_level * 0.1)) * self.get_district_pressure_multiplier()
+        encounter_chance = min(0.95, encounter_chance)
         
         if random.random() < encounter_chance:
             self.criminal_encounter(district)
@@ -262,7 +333,7 @@ class Protagonist:
             handler()
 
     def _get_police_stats(self, police_type):
-        return {
+        base_stats = {
             "police": {"stamina": 30, "damage": 8, "wanted_increase": 1},
             "security": {"stamina": 25, "damage": 6, "wanted_increase": 1},
             "swat": {"stamina": 50, "damage": 15, "wanted_increase": 3},
@@ -273,6 +344,12 @@ class Protagonist:
             "container_guard": {"stamina": 28, "damage": 6, "wanted_increase": 1},
             "private_security": {"stamina": 45, "damage": 11, "wanted_increase": 2}
         }.get(police_type, {"stamina": 30, "damage": 8, "wanted_increase": 1})
+        pressure = self.get_district_pressure_multiplier()
+        return {
+            "stamina": int(base_stats["stamina"] * pressure),
+            "damage": int(base_stats["damage"] * pressure),
+            "wanted_increase": max(1, int(base_stats["wanted_increase"] * pressure))
+        }
     
     def _get_bribe_cost(self, police_type):
         return {
@@ -1299,6 +1376,7 @@ class Protagonist:
         print("Die Vice City Dragons Saga ist beendet. Du bist frei!")
         
         self.dragon_defeated = True
+        self.finalize_run("victory")
     
     def dragon_defeat(self, dragon):
         print("\n*** DEINE KONSEKUENZEN HOLEN DICH EIN ***")
@@ -1312,6 +1390,165 @@ class Protagonist:
         self.stamina = 10
         
         print("Alles ist verloren. Das kriminelle Leben hat dich bezahlt.")
+        self.finalize_run("defeat")
+    
+    def determine_branch_ending(self, outcome):
+        betrayed = any("Haken" in choice["choice"] for choice in self.branch_choices)
+        
+        if outcome == "defeat":
+            return (
+                "ENDUNG: DRACHENKERKER",
+                "Du wirst zur Legende als Warnung: Macht ohne Grenzen endet in Ketten."
+            )
+        
+        if self.partner_trust >= 75 and self.reputation >= 45 and self.wanted_level <= 2:
+            return (
+                "ENDUNG: PAKT DER LOYALITÄT",
+                "Mit Vertrauen und Reputation baust du ein legales Imperium aus den Resten der Unterwelt."
+            )
+        
+        if self.wanted_level >= 4 and self.reputation >= 60:
+            return (
+                "ENDUNG: SCHATTENKOENIG*IN",
+                "Du herrschst aus dem Verborgenen. Vice City flüstert deinen Namen mit Angst."
+            )
+        
+        if self.partner_trust <= 30 or betrayed:
+            return (
+                "ENDUNG: EINSAME KRONE",
+                "Dein Aufstieg war erfolgreich, aber jede Brücke ist verbrannt. Niemand traut dir mehr."
+            )
+        
+        return (
+            "ENDUNG: SCHMALER GRAT",
+            "Du überlebst und findest einen fragilen Frieden zwischen Schuld und Zukunft."
+        )
+    
+    def _compile_endgame_report(self, outcome):
+        title, description = self.determine_branch_ending(outcome)
+        completed_missions = self.story_flags.get("completed_missions", [])
+        self.run_history["highest_wanted"] = max(self.run_history["highest_wanted"], self.wanted_level)
+        self.run_history["highest_reputation"] = max(self.run_history["highest_reputation"], self.reputation)
+        self.run_history["lowest_partner_trust"] = min(self.run_history["lowest_partner_trust"], self.partner_trust)
+        
+        return {
+            "outcome": outcome,
+            "ending_title": title,
+            "ending_description": description,
+            "character": self.character_type,
+            "name": self.name,
+            "chapter": self.chapter,
+            "level": self.level,
+            "cash": self.cash,
+            "wanted_level": self.wanted_level,
+            "reputation": self.reputation,
+            "partner_trust": self.partner_trust,
+            "days": self.days,
+            "dragon_encounters": self.dragon_encounters,
+            "completed_missions": completed_missions,
+            "branch_choices": self.branch_choices[-6:],
+            "mission_modifier": self.mission_modifier,
+            "district_condition": self.district_condition,
+            "ng_plus_cycle": self.new_game_plus_cycle
+        }
+    
+    def finalize_run(self, outcome):
+        if self.run_completed:
+            return
+        self.update_run_tracking()
+        self.run_completed = True
+        self.ng_plus_unlocked = True
+        self.run_history["runs_completed"] += 1
+        if outcome == "victory":
+            self.run_history["victories"] += 1
+        else:
+            self.run_history["defeats"] += 1
+        self.endgame_report = self._compile_endgame_report(outcome)
+    
+    def show_endgame_summary(self):
+        if not self.endgame_report:
+            print("Noch keine Run-Zusammenfassung verfügbar.")
+            return
+        
+        report = self.endgame_report
+        print("\n=== RUN-ZUSAMMENFASSUNG ===")
+        print(f"{report['ending_title']}")
+        print(report["ending_description"])
+        print(f"Charakter: {report['name']} ({report['character']}) | Kapitel: {report['chapter']} | Level: {report['level']}")
+        print(f"Cash: ${report['cash']} | Wanted: {report['wanted_level']} | Reputation: {report['reputation']} | Vertrauen: {report['partner_trust']}%")
+        print(f"Tage in Vice City: {report['days']} | Drachenbegegnungen: {report['dragon_encounters']}")
+        print(f"Modifier: Mission={report['mission_modifier']} | Distrikt={report['district_condition']} | NG+ Zyklus={report['ng_plus_cycle']}")
+        print(
+            f"Run-Historie: Runs={self.run_history['runs_completed']} | Siege={self.run_history['victories']} | "
+            f"Niederlagen={self.run_history['defeats']} | Peak Wanted={self.run_history['highest_wanted']} | "
+            f"Peak Reputation={self.run_history['highest_reputation']}"
+        )
+        
+        missions = report["completed_missions"] or ["Keine"]
+        print(f"Abgeschlossene Missionen: {', '.join(missions)}")
+        if report["branch_choices"]:
+            print("Wichtige Entscheidungen:")
+            for entry in report["branch_choices"]:
+                print(f"- {entry['mission']} / {entry['phase']}: {entry['choice']}")
+    
+    def configure_replay_modifiers(self):
+        print("\n[REPLAY] Missions-Modifier wählen:")
+        print("1. standard (keine Änderungen)")
+        print("2. clean_getaway (leichtere Flucht, bessere Rewards)")
+        print("3. heat_wave (schwerer, aber mehr Rewards)")
+        print("4. all_or_nothing (sehr schwer, maximale Rewards)")
+        mission_choice = input("Wahl (1-4): ").strip()
+        self.mission_modifier = {
+            "1": "standard",
+            "2": "clean_getaway",
+            "3": "heat_wave",
+            "4": "all_or_nothing"
+        }.get(mission_choice, "standard")
+        
+        print("\n[REPLAY] Distrikt-Bedingungen wählen:")
+        print("1. normal")
+        print("2. crackdown")
+        print("3. blackout")
+        print("4. martial_law")
+        district_choice = input("Wahl (1-4): ").strip()
+        self.district_condition = {
+            "1": "normal",
+            "2": "crackdown",
+            "3": "blackout",
+            "4": "martial_law"
+        }.get(district_choice, "normal")
+    
+    def start_new_game_plus(self):
+        if not self.ng_plus_unlocked:
+            print("New Game+ ist noch nicht freigeschaltet.")
+            return False
+        
+        self.configure_replay_modifiers()
+        self.new_game_plus_cycle += 1
+        self.new_game_plus_active = True
+        self.run_completed = False
+        self.dragon_defeated = False
+        self.endgame_report = {}
+        self.branch_choices = []
+        
+        self.cash = 1000 + (self.new_game_plus_cycle * 250)
+        self.level = 1 + self.new_game_plus_cycle
+        self.stamina = self.level * 25
+        self.days = 0
+        self.wanted_level = 0
+        self.reputation = 0
+        self.partner_trust = 100
+        self.dragon_encounters = 0
+        self.chapter = 1
+        self.inventory = self.inventory[:1]
+        self.drug_effects = []
+        self.story_flags["completed_missions"] = []
+        self.story_flags["available_missions"] = []
+        self.story_flags["first_mission_completed"] = False
+        self.initialize_missions()
+        
+        print(f"\n[NG+] Zyklus {self.new_game_plus_cycle} gestartet! Viel Glück in Vice City.")
+        return True
     
     def visit_mission_board(self):
         print("\n[MISSION] MISSION-BRETT")
@@ -1351,6 +1588,7 @@ class Protagonist:
             print(f"\n💥 Mission '{mission.name}' fehlgeschlagen oder abgebrochen.")
     
     def initialize_missions(self):
+        self.mission_manager = MissionManager()
         rico = MissionGiver(
             "Rico",
             "Ocean Beach",
@@ -1542,6 +1780,7 @@ class Protagonist:
             print("Ungültige Eingabe!")
     
     def save_game(self, filename="data/saves/savegame.json"):
+        self.update_run_tracking()
         save_data = {
             "name": self.name,
             "character_type": self.character_type,
@@ -1561,7 +1800,16 @@ class Protagonist:
             "stealth": self.stealth,
             "dragon_defeated": getattr(self, 'dragon_defeated', False),
             "story_flags": self.story_flags,
-            "clear_screen_enabled": self.text_display.clear_screen_enabled
+            "clear_screen_enabled": self.text_display.clear_screen_enabled,
+            "ng_plus_unlocked": self.ng_plus_unlocked,
+            "new_game_plus_active": self.new_game_plus_active,
+            "new_game_plus_cycle": self.new_game_plus_cycle,
+            "mission_modifier": self.mission_modifier,
+            "district_condition": self.district_condition,
+            "branch_choices": self.branch_choices,
+            "run_history": self.run_history,
+            "run_completed": self.run_completed,
+            "endgame_report": self.endgame_report
         }
         
         try:
@@ -1600,6 +1848,15 @@ class Protagonist:
                 "redemption_offered": False
             })
             self.text_display.clear_screen_enabled = save_data.get("clear_screen_enabled", False)
+            self.ng_plus_unlocked = save_data.get("ng_plus_unlocked", False)
+            self.new_game_plus_active = save_data.get("new_game_plus_active", False)
+            self.new_game_plus_cycle = save_data.get("new_game_plus_cycle", 0)
+            self.mission_modifier = save_data.get("mission_modifier", "standard")
+            self.district_condition = save_data.get("district_condition", "normal")
+            self.branch_choices = save_data.get("branch_choices", [])
+            self.run_history = save_data.get("run_history", self.run_history)
+            self.run_completed = save_data.get("run_completed", False)
+            self.endgame_report = save_data.get("endgame_report", {})
             
             return True
         except FileNotFoundError:

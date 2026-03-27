@@ -103,6 +103,8 @@ class Mission:
         success_chance += (protagonist.level * 0.05)
         success_chance += (protagonist.combat_skill * 0.02) if phase.combat_check else 0
         success_chance += (protagonist.stealth * 0.02) if phase.stealth_check else 0
+        success_chance += getattr(protagonist, "get_mission_success_modifier", lambda: 0.0)()
+        success_chance = max(0.05, min(0.95, success_chance))
         
         if random.random() < success_chance:
             print(f"\n[ERFOLG] {phase.success_message}")
@@ -121,6 +123,8 @@ class Mission:
         protagonist.wanted_level = min(5, protagonist.wanted_level + phase.wanted_increase)
         
         escape_chance = 0.4 + (protagonist.stealth * 0.03) - (protagonist.wanted_level * 0.1)
+        escape_chance += getattr(protagonist, "get_escape_modifier", lambda: 0.0)()
+        escape_chance = max(0.05, min(0.9, escape_chance))
         
         if random.random() < escape_chance:
             print(f"\n[ERFOLG] {phase.escape_success_message}")
@@ -144,6 +148,8 @@ class Mission:
                     self.apply_rewards(choice['rewards'], protagonist)
                 if choice.get('consequences'):
                     self.apply_consequences(choice['consequences'], protagonist)
+                if hasattr(protagonist, "record_branch_choice"):
+                    protagonist.record_branch_choice(self.name, phase.name, choice['text'])
                 
                 self.current_phase += 1
                 return self.execute_current_phase(protagonist)
@@ -188,12 +194,16 @@ class Mission:
             return False
     
     def apply_rewards(self, rewards, protagonist):
+        reward_multiplier = getattr(protagonist, "get_reward_multiplier", lambda: 1.0)()
+        
         if rewards.get('cash'):
-            protagonist.cash += rewards['cash']
-            print(f"+${rewards['cash']} Cash")
+            cash_reward = int(rewards['cash'] * reward_multiplier)
+            protagonist.cash += cash_reward
+            print(f"+${cash_reward} Cash")
         if rewards.get('reputation'):
-            protagonist.reputation += rewards['reputation']
-            print(f"+{rewards['reputation']} Reputation")
+            reputation_reward = max(1, int(rewards['reputation'] * reward_multiplier))
+            protagonist.reputation += reputation_reward
+            print(f"+{reputation_reward} Reputation")
         if rewards.get('stamina'):
             protagonist.stamina = min(protagonist.level * 25, protagonist.stamina + rewards['stamina'])
             print(f"+{rewards['stamina']} Ausdauer")
