@@ -4,6 +4,7 @@ import random
 
 from src.ui.text_display import TextDisplayManager
 from src.story.story_manager import StoryManager
+from src.story.journal import Journal
 from src.missions.mission_manager import MissionManager
 from src.missions.mission import Mission, MissionPhase
 from src.missions.mission_giver import MissionGiver
@@ -1382,6 +1383,7 @@ class Protagonist:
         
         if not available_missions:
             print("Keine Missionen verfügbar. Erhöhe deine Reputation oder Level.")
+            self.update_journal_state()
             return
         
         print("\n[MISSION] VERFÜGBARE MISSIONEN:")
@@ -1409,6 +1411,7 @@ class Protagonist:
             print(f"\n🎉 Mission '{mission.name}' erfolgreich abgeschlossen!")
         else:
             print(f"\n💥 Mission '{mission.name}' fehlgeschlagen oder abgebrochen.")
+        self.update_journal_state()
     
     def initialize_missions(self):
         rico = MissionGiver(
@@ -1434,6 +1437,8 @@ class Protagonist:
         first_mission = self.mission_manager.all_missions.get("First Taste of Vice City")
         if first_mission:
             first_mission.available = True
+
+        self.update_journal_state()
     
     def create_first_taste_mission(self):
         mission = Mission(
@@ -1603,7 +1608,18 @@ class Protagonist:
         except ValueError:
             print("Ungültige Eingabe!")
     
+
+    def update_journal_state(self):
+        self.journal.sync_missions(self.mission_manager)
+        self.journal.set_chapter(self.chapter)
+        self.journal.set_relationship("Partner-Vertrauen", self.partner_trust)
+
+    def open_journal(self):
+        self.update_journal_state()
+        self.journal.display(self.story_manager)
+
     def save_game(self, filename="data/saves/savegame.json"):
+        self.update_journal_state()
         save_data = {
             "name": self.name,
             "character_type": self.character_type,
@@ -1664,6 +1680,7 @@ class Protagonist:
                 "partner_betrayed": False,
                 "redemption_offered": False
             })
+            self.journal = Journal.from_dict(save_data.get("journal", {}))
             self.text_display.clear_screen_enabled = save_data.get("clear_screen_enabled", False)
             district_reputations = save_data.get("district_reputations", {})
             for district_name, district in self.district_manager.districts.items():

@@ -172,7 +172,11 @@ class Mission:
                     self.apply_rewards(choice['rewards'], protagonist)
                 if choice.get('consequences'):
                     self.apply_consequences(choice['consequences'], protagonist)
-                
+
+                if hasattr(protagonist, "journal"):
+                    protagonist.journal.record_choice(choice.get('text', ''), choice.get('response', ''))
+                    protagonist.update_journal_state()
+
                 self.current_phase += 1
                 return self.execute_current_phase(protagonist)
             else:
@@ -228,6 +232,9 @@ class Mission:
         if rewards.get('partner_trust'):
             protagonist.partner_trust = min(100, protagonist.partner_trust + rewards['partner_trust'])
             print(f"+{rewards['partner_trust']} Partner-Vertrauen")
+
+        if hasattr(protagonist, "journal"):
+            protagonist.update_journal_state()
     
     def apply_consequences(self, consequences, protagonist):
         if consequences.get('cash'):
@@ -242,6 +249,9 @@ class Mission:
         if consequences.get('partner_trust'):
             protagonist.partner_trust = max(0, protagonist.partner_trust - consequences['partner_trust'])
             print(f"-{consequences['partner_trust']} Partner-Vertrauen")
+
+        if hasattr(protagonist, "journal"):
+            protagonist.update_journal_state()
     
     def complete_mission(self, protagonist):
         self.completed = True
@@ -268,4 +278,7 @@ class Mission:
             protagonist.story_flags["first_mission_completed"] = True
             protagonist.story_manager.trigger_story_event("first_crime", protagonist)
         
+        if hasattr(protagonist, "journal"):
+            protagonist.update_journal_state()
+
         return True
