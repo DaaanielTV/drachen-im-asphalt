@@ -171,20 +171,7 @@ class Protagonist:
         if district.special_feature in district.discovered_features:
             self.handle_district_feature(district)
             return
-        
-        if self.ankle_monitor and random.random() < 0.3:
-            print("\n[FUSSFESSEL] Deine Fußfessel schlägt Alarm! Die Polizei ist auf dem Weg!")
-            self.wanted_level = min(5, self.wanted_level + 2)
-            self.stamina = max(1, self.stamina - 5)
-            return
-        
-        encounter_chance = 0.3 + (district.danger_level * 0.1)
-        
-        if random.random() < encounter_chance:
-            self.criminal_encounter(district)
-        else:
-            print("\n[STADT] Die Straße ist ruhig. Du findest nichts Nützliches hier.")
-            self.stamina = max(1, self.stamina - 2)
+        self.explore_district_regular(district)
     
     def handle_district_feature(self, district):
         if district.special_feature == "tourism_season":
@@ -216,7 +203,10 @@ class Protagonist:
             self.wanted_level = min(5, self.wanted_level + 2)
             self.stamina = max(1, self.stamina - 5)
             return
-        
+
+        if self.trigger_world_event(district):
+            return
+
         encounter_chance = 0.3 + (district.danger_level * 0.1)
         
         if random.random() < encounter_chance:
@@ -224,6 +214,173 @@ class Protagonist:
         else:
             print("\n[STADT] Die Straße ist ruhig. Du findest nichts Nützliches hier.")
             self.stamina = max(1, self.stamina - 2)
+
+    def _get_player_progress_score(self):
+        completed_missions = len(self.story_flags.get("completed_missions", []))
+        return self.level + (self.chapter * 0.8) + (self.reputation / 25) + (completed_missions * 0.5)
+
+    def trigger_world_event(self, district):
+        progress_score = self._get_player_progress_score()
+        season = self.district_manager.current_season
+
+        event_chance = 0.2 + (district.danger_level * 0.03) + (self.wanted_level * 0.04)
+        if season == "high_season":
+            event_chance += 0.08
+        elif season == "low_season":
+            event_chance -= 0.04
+        if progress_score >= 10:
+            event_chance += 0.06
+
+        if random.random() >= min(0.85, event_chance):
+            return False
+
+        event_pool = [
+            {"type": "informant", "weight": 2.2},
+            {"type": "market", "weight": 2.0},
+            {"type": "unexpected", "weight": 1.8},
+            {"type": "ambush", "weight": 1.4 + (district.danger_level * 0.15)}
+        ]
+
+        if self.wanted_level >= 2:
+            event_pool.append({"type": "checkpoint", "weight": 1.5 + (self.wanted_level * 0.6)})
+        if district.name in {"Ocean Beach", "Washington Beach", "Vice Point", "Downtown"}:
+            event_pool.append({"type": "street_race", "weight": 1.7 + (0.2 if season == "high_season" else 0)})
+        if district.name in {"Viceport", "Little Haiti", "Everglades", "Vice Keys"}:
+            event_pool.append({"type": "ambush", "weight": 0.8})
+        if season == "high_season":
+            event_pool.append({"type": "market", "weight": 0.9})
+            event_pool.append({"type": "street_race", "weight": 0.6})
+        if season == "low_season":
+            event_pool.append({"type": "informant", "weight": 0.8})
+            event_pool.append({"type": "checkpoint", "weight": 0.5})
+
+        event_type = random.choices(
+            [event["type"] for event in event_pool],
+            weights=[event["weight"] for event in event_pool],
+            k=1
+        )[0]
+
+        print(f"\n[WORLD EVENT] Dynamisches Ereignis in {district.name}!")
+        handlers = {
+            "street_race": self.street_race_event,
+            "checkpoint": self.police_checkpoint_event,
+            "informant": self.informant_event,
+            "ambush": self.ambush_event,
+            "market": self.market_opportunity_event,
+            "unexpected": self.unexpected_encounter_event
+        }
+        handlers[event_type](district, progress_score)
+        return True
+
+    def street_race_event(self, district, progress_score):
+        print("[RACE] Illegales Straßenrennen entdeckt.")
+        action = input("Willst du teilnehmen oder sabotieren? (teilnehmen/sabotieren) ")
+        skill_factor = 0.45 + (self.stealth * 0.015) + min(0.15, progress_score * 0.01)
+        success = random.random() < skill_factor
+
+        if success:
+            prize = random.randint(180, 520) + (district.danger_level * 20)
+            print(f"Du dominierst das Rennen und kassierst ${prize}!")
+            self.cash += prize
+            self.reputation += 3
+            self.stamina = max(1, self.stamina - 6)
+        else:
+            print("Das Rennen eskaliert. Sirenen nähern sich!")
+            self.wanted_level = min(5, self.wanted_level + 1)
+            self.stamina = max(1, self.stamina - 10)
+
+    def police_checkpoint_event(self, district, progress_score):
+        print("[CHECKPOINT] Polizeikontrolle blockiert mehrere Ausgänge.")
+        evade_chance = 0.35 + (self.stealth * 0.02) + min(0.12, progress_score * 0.01) - (self.wanted_level * 0.08)
+        if random.random() < evade_chance:
+            print("Du umgehst den Checkpoint über Seitenstraßen.")
+            self.reputation += 1
+            self.stamina = max(1, self.stamina - 4)
+            return
+
+        print("Die Polizei erkennt dich und greift durch!")
+        self.wanted_level = min(5, self.wanted_level + 1)
+        if district.danger_level >= 7:
+            self.customs_encounter()
+        else:
+            self.police_encounter()
+
+    def informant_event(self, district, progress_score):
+        print("[INFORMANT] Ein Informant bietet Insider-Infos über lokale Ziele.")
+        buy_in = 80 if progress_score < 8 else 140
+        action = input(f"Infos kaufen für ${buy_in}? (ja/nein) ")
+        if action != "ja":
+            print("Du lehnst den Deal ab und ziehst weiter.")
+            return
+        if self.cash < buy_in:
+            print("Nicht genug Cash für den Deal.")
+            return
+
+        self.cash -= buy_in
+        payout = random.randint(160, 420) + int(progress_score * 10)
+        print(f"Die Information zahlt sich aus. Profit: ${payout}!")
+        self.cash += payout
+        district.reputation += 2
+        self.reputation += 2
+
+    def ambush_event(self, district, progress_score):
+        print("[AMBUSH] Eine rivalisierende Crew legt dir einen Hinterhalt.")
+        ambush_power = 0.45 + (district.danger_level * 0.04) + (self.wanted_level * 0.05)
+        defense_power = 0.35 + (self.combat_skill * 0.02) + min(0.15, progress_score * 0.01)
+        if random.random() < max(0.1, defense_power - ambush_power + 0.5):
+            loot = random.randint(120, 380)
+            print(f"Du durchbrichst den Hinterhalt und sicherst ${loot}.")
+            self.cash += loot
+            self.reputation += 4
+            self.stamina = max(1, self.stamina - 7)
+        else:
+            print("Der Hinterhalt trifft hart. Du verlierst Ressourcen.")
+            self.cash = max(0, self.cash - random.randint(80, 220))
+            self.stamina = max(1, self.stamina - 12)
+            self.wanted_level = min(5, self.wanted_level + 1)
+
+    def market_opportunity_event(self, district, progress_score):
+        season = self.district_manager.current_season
+        print("[MARKT] Ein temporäres Schwarzmarktfenster öffnet sich.")
+        seasonal_bonus = 1.25 if season == "high_season" else 0.8 if season == "low_season" else 1.0
+        base_profit = random.randint(90, 320)
+        adjusted_profit = int((base_profit + (district.danger_level * 12)) * seasonal_bonus)
+        risk = 0.2 + (self.wanted_level * 0.07)
+        action = input("Chance nutzen? (ja/nein) ")
+        if action != "ja":
+            print("Du wartest auf eine bessere Gelegenheit.")
+            return
+
+        if random.random() < risk:
+            print("Der Deal wird von verdeckten Ermittlern gestört!")
+            self.wanted_level = min(5, self.wanted_level + 1)
+            self.stamina = max(1, self.stamina - 8)
+        else:
+            print(f"Sauberer Deal. Gewinn: ${adjusted_profit}.")
+            self.cash += adjusted_profit
+            self.reputation += 2
+            district.reputation += 1
+            self.stamina = max(1, self.stamina - 5)
+
+    def unexpected_encounter_event(self, district, progress_score):
+        surprises = [
+            "Ein VIP verliert eine Tasche neben dir.",
+            "Ein alter Kontakt schickt dir eine spontane Jobchance.",
+            "Ein Straßenkünstler deckt einen Geldtransport auf.",
+            "Ein beschädigter Lieferwagen steht verlassen am Rand."
+        ]
+        print(f"[ENCOUNTER] {random.choice(surprises)}")
+        good_outcome_chance = 0.5 + min(0.2, progress_score * 0.01) - (self.wanted_level * 0.04)
+        if random.random() < good_outcome_chance:
+            reward = random.randint(100, 260)
+            print(f"Du nutzt den Moment perfekt und machst ${reward}.")
+            self.cash += reward
+            self.reputation += 1
+        else:
+            print("Die Situation kippt unerwartet gegen dich.")
+            self.stamina = max(1, self.stamina - 6)
+            if district.danger_level > 6:
+                self.wanted_level = min(5, self.wanted_level + 1)
     
     def criminal_encounter(self, district):
         encounters = {
