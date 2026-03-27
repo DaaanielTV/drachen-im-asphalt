@@ -74,11 +74,12 @@ def game_loop(protagonist, dragon):
         print("4. Schwarzmarkt besuchen")
         print("5. Kriminelles Training")
         print("6. Mission-Brett (Neu!)")
-        print("7. Drachen der Konsequenzen konfrontieren")
-        print("8. Bildschirm-Löschung umschalten")
-        print("9. Spiel speichern")
-        print("10. Spiel beenden")
-        choice = input("Waehle eine Aktion (1-10): ")
+        print("7. Journal & Quest-Log")
+        print("8. Drachen der Konsequenzen konfrontieren")
+        print("9. Bildschirm-Löschung umschalten")
+        print("10. Spiel speichern")
+        print("11. Spiel beenden")
+        choice = input("Waehle eine Aktion (1-11): ")
         
         if choice == "1":
             protagonist.display_attributes()
@@ -93,18 +94,20 @@ def game_loop(protagonist, dragon):
         elif choice == "6":
             protagonist.visit_mission_board()
         elif choice == "7":
+            protagonist.open_journal()
+        elif choice == "8":
             protagonist.confront_dragon(dragon)
             protagonist.save_dragon(dragon)
             if protagonist.dragon_defeated:
                 print("\n*** VICE CITY DRAGONS BEENDET! ***")
                 print("Danke fuers Spielen dieser kriminellen Saga!")
                 break
-        elif choice == "8":
-            protagonist.text_display.toggle_clear_screen()
         elif choice == "9":
+            protagonist.text_display.toggle_clear_screen()
+        elif choice == "10":
             protagonist.save_game()
             protagonist.save_dragon(dragon)
-        elif choice == "10":
+        elif choice == "11":
             save_choice = input("Moechtest du vor dem Beenden speichern? (j/n) ")
             if save_choice.lower() == "j":
                 protagonist.save_game()

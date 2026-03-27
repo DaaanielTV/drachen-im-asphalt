@@ -4,7 +4,7 @@ import random
 
 from src.ui.text_display import TextDisplayManager
 from src.story.story_manager import StoryManager
-from src.story.consequence_manager import ConsequenceManager
+from src.story.journal import Journal
 from src.missions.mission_manager import MissionManager
 from src.missions.mission import Mission, MissionPhase
 from src.missions.mission_giver import MissionGiver
@@ -59,6 +59,7 @@ class Protagonist:
         self.consequence_manager = ConsequenceManager(self.story_flags["decision_flags"])
         self.mission_manager = MissionManager()
         self.district_manager = DistrictManager(self)
+        self.current_district_context = None
         
         if character_type == "jason":
             self.combat_skill = 15
@@ -80,6 +81,27 @@ class Protagonist:
         print(f"[PARTNER] Partner-Vertrauen: {self.partner_trust}%")
         if self.ankle_monitor:
             print("[FUSSFESSEL] Fußfessel aktiv (Einschränkungen bei Aktivitäten)")
+        print("\n[REPUTATION] Distrikt-Reputation:")
+        for district in self.district_manager.districts.values():
+            print(f"- {district.name}: {district.reputation}")
+
+    def get_district_reputation(self, district_name=None):
+        target_district = district_name or self.current_district_context
+        if target_district and target_district in self.district_manager.districts:
+            return self.district_manager.districts[target_district].reputation
+        return 0
+
+    def get_average_district_reputation(self):
+        districts = list(self.district_manager.districts.values())
+        if not districts:
+            return 0
+        return int(sum(district.reputation for district in districts) / len(districts))
+
+    def adjust_district_reputation(self, amount, district_name=None):
+        target_district = district_name or self.current_district_context
+        if target_district and target_district in self.district_manager.districts:
+            district = self.district_manager.districts[target_district]
+            district.reputation = max(-100, min(100, district.reputation + amount))
     
     def switch_character(self):
         pass
@@ -122,6 +144,7 @@ class Protagonist:
             print("Ungültige Eingabe!")
     
     def explore_district(self, district):
+        self.current_district_context = district.name
         district.describe()
         
         if district.special_feature in district.discovered_features:
@@ -166,6 +189,7 @@ class Protagonist:
             self.explore_district_regular(district)
     
     def explore_district_regular(self, district):
+        self.current_district_context = district.name
         if self.ankle_monitor and random.random() < 0.3:
             print("\n[FUSSFESSEL] Deine Fußfessel schlägt Alarm! Die Polizei ist auf dem Weg!")
             self.wanted_level = min(5, self.wanted_level + 2)
@@ -266,7 +290,7 @@ class Protagonist:
             handler()
 
     def _get_police_stats(self, police_type):
-        return {
+        base_stats = {
             "police": {"stamina": 30, "damage": 8, "wanted_increase": 1},
             "security": {"stamina": 25, "damage": 6, "wanted_increase": 1},
             "swat": {"stamina": 50, "damage": 15, "wanted_increase": 3},
@@ -276,10 +300,20 @@ class Protagonist:
             "customs": {"stamina": 40, "damage": 12, "wanted_increase": 2},
             "container_guard": {"stamina": 28, "damage": 6, "wanted_increase": 1},
             "private_security": {"stamina": 45, "damage": 11, "wanted_increase": 2}
-        }.get(police_type, {"stamina": 30, "damage": 8, "wanted_increase": 1})
+        }
+        stats = base_stats.get(police_type, {"stamina": 30, "damage": 8, "wanted_increase": 1}).copy()
+        district_rep = self.get_district_reputation()
+        pressure_modifier = max(-0.2, min(0.2, -district_rep / 200))
+        stats["stamina"] = max(10, int(stats["stamina"] * (1 + pressure_modifier)))
+        stats["damage"] = max(2, int(stats["damage"] * (1 + pressure_modifier)))
+        if district_rep <= -40:
+            stats["wanted_increase"] += 1
+        elif district_rep >= 40:
+            stats["wanted_increase"] = max(0, stats["wanted_increase"] - 1)
+        return stats
     
     def _get_bribe_cost(self, police_type):
-        return {
+        base_cost = {
             "police": 200,
             "security": 150,
             "swat": 500,
@@ -290,6 +324,9 @@ class Protagonist:
             "container_guard": 125,
             "private_security": 400
         }.get(police_type, 200)
+        district_rep = self.get_district_reputation()
+        modifier = max(0.7, min(1.4, 1 - (district_rep / 250)))
+        return int(base_cost * modifier)
     
     def _handle_police_choice(self, police_type, action):
         if action == "kämpfen":
@@ -352,7 +389,8 @@ class Protagonist:
     
     def combat_police(self, police_type):
         stats = self._get_police_stats(police_type)
-        combat_chance = 0.3 + (self.combat_skill * 0.02) + (len(self.inventory) * 0.05)
+        district_rep = self.get_district_reputation()
+        combat_chance = 0.3 + (self.combat_skill * 0.02) + (len(self.inventory) * 0.05) + (district_rep * 0.002)
         
         if random.random() < combat_chance:
             print(f"Du besiegst die {police_type}-Einheit!")
@@ -360,6 +398,7 @@ class Protagonist:
             self.cash += cash_found
             self.wanted_level = min(5, self.wanted_level + stats["wanted_increase"])
             self.reputation += 5
+            self.adjust_district_reputation(2)
             print(f"Du findest ${cash_found} bei den Besiegten!")
             print(f"Wanted Level: {self.wanted_level}")
         else:
@@ -368,6 +407,7 @@ class Protagonist:
             self.wanted_level = min(5, self.wanted_level + stats["wanted_increase"] + 1)
             self.stamina = max(1, self.stamina - 15)
             self.days += 1
+            self.adjust_district_reputation(-3)
             print("Du verlierst die Hälfte deines Geldes und landest im Krankenhaus!")
             
             if random.random() < 0.4:
@@ -376,7 +416,8 @@ class Protagonist:
                 self.dragon_encounters += 1
     
     def flee_police(self, police_type):
-        flee_chance = 0.5 + (self.stealth * 0.03) - (self.wanted_level * 0.1)
+        district_rep = self.get_district_reputation()
+        flee_chance = 0.5 + (self.stealth * 0.03) - (self.wanted_level * 0.1) + (district_rep * 0.002)
         
         if random.random() < flee_chance:
             print("Du kannst erfolgreich entkommen!")
@@ -390,8 +431,18 @@ class Protagonist:
         
         if self.cash >= cost:
             self.cash -= cost
-            print(f"Du bestechst die {police_type}-Einheit mit ${cost}!")
-            self.wanted_level = max(0, self.wanted_level - 1)
+            district_rep = self.get_district_reputation()
+            bribe_success_chance = 0.65 + (district_rep * 0.005)
+            if random.random() < bribe_success_chance:
+                print(f"Du bestechst die {police_type}-Einheit mit ${cost}!")
+                wanted_drop = 2 if district_rep >= 30 else 1
+                self.wanted_level = max(0, self.wanted_level - wanted_drop)
+                self.adjust_district_reputation(1)
+            else:
+                print(f"Die Bestechung in Höhe von ${cost} wird abgelehnt!")
+                self.wanted_level = min(5, self.wanted_level + 1)
+                self.adjust_district_reputation(-2)
+                self.combat_police(police_type)
         else:
             print(f"Du hast nicht genug Geld für die Bestechung (${cost} benötigt)!")
             self.combat_police(police_type)
@@ -1195,27 +1246,35 @@ class Protagonist:
             Weapon("Sturmgewehr", 3000, 25, 5),
             Weapon("Scharfschützengewehr", 5000, 35, 5)
         ]
+        market_rep = self.get_district_reputation("Vice Keys")
+        if market_rep == 0:
+            market_rep = self.get_average_district_reputation()
+        price_modifier = max(0.7, min(1.35, 1 - (market_rep / 250)))
         
         print("\n[WAFFEN] SCHWARZMARKT - Illegale Waffen")
+        print(f"Händler-Stimmung (Reputation): {market_rep} | Preisfaktor: {price_modifier:.2f}x")
         print("Hier sind die verfügbaren Waffen:")
         for i, weapon in enumerate(weapons):
             owned = " (Bereits besitzt)" if weapon.name in [owned_item.name for owned_item in self.inventory] else ""
-            print(f"{i + 1}. {weapon.name} - Kosten: ${weapon.cost} - Schaden: +{weapon.damage_increase} - Illegalität: {'⚠️' * weapon.illegal_status}{owned}")
+            adjusted_cost = int(weapon.cost * price_modifier)
+            print(f"{i + 1}. {weapon.name} - Kosten: ${adjusted_cost} - Schaden: +{weapon.damage_increase} - Illegalität: {'⚠️' * weapon.illegal_status}{owned}")
         
         try:
             choice = int(input("Welche Waffe möchtest du kaufen? (Gib die Nummer ein) "))
             if 1 <= choice <= len(weapons):
                 weapon = weapons[choice - 1]
+                adjusted_cost = int(weapon.cost * price_modifier)
                 if weapon.name in [owned_item.name for owned_item in self.inventory]:
                     print(f"Du besitzt bereits eine {weapon.name}!")
-                elif self.cash >= weapon.cost:
-                    self.cash -= weapon.cost
+                elif self.cash >= adjusted_cost:
+                    self.cash -= adjusted_cost
                     self.inventory.append(weapon)
-                    print(f"Du hast eine {weapon.name} gekauft!")
+                    self.adjust_district_reputation(1, "Vice Keys")
+                    print(f"Du hast eine {weapon.name} für ${adjusted_cost} gekauft!")
                     self.wanted_level = min(5, self.wanted_level + (weapon.illegal_status // 2))
                     print(f"Wanted Level erhöht: {self.wanted_level}")
                 else:
-                    print(f"Du hast nicht genug Geld für diese Waffe (${weapon.cost} benötigt)!")
+                    print(f"Du hast nicht genug Geld für diese Waffe (${adjusted_cost} benötigt)!")
             else:
                 print("Ungültige Wahl!")
         except ValueError:
@@ -1330,11 +1389,13 @@ class Protagonist:
         
         if not available_missions:
             print("Keine Missionen verfügbar. Erhöhe deine Reputation oder Level.")
+            self.update_journal_state()
             return
         
         print("\n[MISSION] VERFÜGBARE MISSIONEN:")
         for i, mission in enumerate(available_missions):
-            print(f"{i+1}. {mission.name} (Kapitel {mission.chapter}, {'*' * mission.difficulty})")
+            effective_difficulty = mission.get_effective_difficulty(self)
+            print(f"{i+1}. {mission.name} (Kapitel {mission.chapter}, {'*' * effective_difficulty})")
             print(f"   Belohnung: ${mission.rewards.get('cash', 0)}, +{mission.rewards.get('reputation', 0)} Reputation")
         
         print(f"{len(available_missions)+1}. Zurück zum Hauptmenü")
@@ -1356,6 +1417,7 @@ class Protagonist:
             print(f"\n🎉 Mission '{mission.name}' erfolgreich abgeschlossen!")
         else:
             print(f"\n💥 Mission '{mission.name}' fehlgeschlagen oder abgebrochen.")
+        self.update_journal_state()
     
     def initialize_missions(self):
         rico = MissionGiver(
@@ -1382,9 +1444,7 @@ class Protagonist:
         if first_mission:
             first_mission.available = True
 
-    def record_decision(self, flag, source, value=True, metadata=None):
-        self.consequence_manager.record_decision(flag, source, value, metadata)
-        self.story_flags["decision_flags"] = self.consequence_manager.decision_flags
+        self.update_journal_state()
     
     def create_first_taste_mission(self):
         mission = Mission(
@@ -1392,7 +1452,8 @@ class Protagonist:
             1,
             2,
             {"cash": 500, "reputation": 5, "partner_trust": 5},
-            self.text_display
+            self.text_display,
+            district_name="Ocean Beach"
         )
         
         phase1 = MissionPhase(
@@ -1464,7 +1525,8 @@ class Protagonist:
             1,
             3,
             {"cash": 800, "reputation": 8, "partner_trust": 3},
-            self.text_display
+            self.text_display,
+            district_name="Little Haiti"
         )
         
         phase1 = MissionPhase(
@@ -1555,7 +1617,18 @@ class Protagonist:
         except ValueError:
             print("Ungültige Eingabe!")
     
+
+    def update_journal_state(self):
+        self.journal.sync_missions(self.mission_manager)
+        self.journal.set_chapter(self.chapter)
+        self.journal.set_relationship("Partner-Vertrauen", self.partner_trust)
+
+    def open_journal(self):
+        self.update_journal_state()
+        self.journal.display(self.story_manager)
+
     def save_game(self, filename="data/saves/savegame.json"):
+        self.update_journal_state()
         save_data = {
             "name": self.name,
             "character_type": self.character_type,
@@ -1575,7 +1648,10 @@ class Protagonist:
             "stealth": self.stealth,
             "dragon_defeated": getattr(self, 'dragon_defeated', False),
             "story_flags": self.story_flags,
-            "clear_screen_enabled": self.text_display.clear_screen_enabled
+            "clear_screen_enabled": self.text_display.clear_screen_enabled,
+            "district_reputations": {
+                name: district.reputation for name, district in self.district_manager.districts.items()
+            }
         }
         
         try:
@@ -1616,10 +1692,11 @@ class Protagonist:
                 "decision_flags": {},
                 "shown_consequence_events": []
             })
-            self.story_flags.setdefault("decision_flags", {})
-            self.story_flags.setdefault("shown_consequence_events", [])
-            self.consequence_manager = ConsequenceManager(self.story_flags["decision_flags"])
+            self.journal = Journal.from_dict(save_data.get("journal", {}))
             self.text_display.clear_screen_enabled = save_data.get("clear_screen_enabled", False)
+            district_reputations = save_data.get("district_reputations", {})
+            for district_name, district in self.district_manager.districts.items():
+                district.reputation = district_reputations.get(district_name, 0)
             
             return True
         except FileNotFoundError:
