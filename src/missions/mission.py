@@ -25,6 +25,8 @@ class MissionPhase:
         self.wanted_increase = 1
         self.success_rewards = {}
         self.failure_consequences = {}
+        self.action_options = []
+        self.allow_escape_route_planning = False
 
 
 class Mission:
