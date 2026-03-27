@@ -20,23 +20,53 @@ class DragonHallucination:
                 "effect": "distrust"
             }
         ]
+        self.distortion_chars = {
+            "a": ["à", "@", "ä"],
+            "e": ["3", "€", "ë"],
+            "i": ["1", "!", "ï"],
+            "o": ["0", "ö"],
+            "s": ["$", "§"],
+            "u": ["ü", "µ"]
+        }
     
-    def trigger_encounter(self, trigger_type, protagonist):
-        encounter = random.choice([e for e in self.encounters if e["trigger"] == trigger_type])
+    def trigger_encounter(self, trigger_type, protagonist, intensity=0.0):
+        matching = [e for e in self.encounters if e["trigger"] == trigger_type]
+        encounter = random.choice(matching) if matching else None
         if encounter:
-            print(f"\n[DRACHE] {encounter['description']}")
-            self.apply_effect(encounter['effect'], protagonist)
+            description = self.distort_text(encounter["description"], intensity)
+            print(f"\n[DRACHE] {description}")
+            self.apply_effect(encounter["effect"], protagonist, intensity)
+            if hasattr(protagonist, "dragon_encounters"):
+                protagonist.dragon_encounters += 1
             return True
         return False
     
-    def apply_effect(self, effect_type, protagonist):
+    def apply_effect(self, effect_type, protagonist, intensity=0.0):
+        intensity_bonus = max(0, int(intensity * 10))
         if effect_type == "paranoia":
-            protagonist.stamina = max(1, protagonist.stamina - 10)
+            protagonist.stamina = max(1, protagonist.stamina - (8 + intensity_bonus))
+            if hasattr(protagonist, "stress_level"):
+                protagonist.stress_level = min(100, protagonist.stress_level + 10 + intensity_bonus)
             print("Dein Stresslevel steigt. Ausdauer verringert.")
         elif effect_type == "hallucination":
-            protagonist.cash = max(0, protagonist.cash - random.randint(50, 200))
+            protagonist.cash = max(0, protagonist.cash - random.randint(50, 200 + (intensity_bonus * 10)))
             print("In der Verwirrung verlierst du Geld.")
         elif effect_type == "distrust":
             if hasattr(protagonist, 'partner_trust'):
-                protagonist.partner_trust = max(0, protagonist.partner_trust - 10)
+                protagonist.partner_trust = max(0, protagonist.partner_trust - (10 + intensity_bonus))
                 print("Das Vertrauen zu deinem Partner schwindet.")
+
+    def distort_text(self, text, intensity):
+        if intensity <= 0.2:
+            return text
+        distorted_text = []
+        for char in text:
+            lower_char = char.lower()
+            if lower_char in self.distortion_chars and random.random() < intensity * 0.25:
+                replacement = random.choice(self.distortion_chars[lower_char])
+                distorted_text.append(replacement)
+            elif random.random() < intensity * 0.03:
+                distorted_text.append(char * 2)
+            else:
+                distorted_text.append(char)
+        return "".join(distorted_text)
