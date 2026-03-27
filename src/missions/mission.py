@@ -25,13 +25,16 @@ class MissionPhase:
         self.wanted_increase = 1
         self.success_rewards = {}
         self.failure_consequences = {}
+        self.action_options = []
+        self.allow_escape_route_planning = False
 
 
 class Mission:
-    def __init__(self, name, chapter, difficulty, rewards, text_display_manager=None):
+    def __init__(self, name, chapter, difficulty, rewards, text_display_manager=None, district_name=None):
         self.name = name
         self.chapter = chapter
         self.difficulty = difficulty
+        self.district_name = district_name
         self.rewards = rewards
         self.text_display = text_display_manager or TextDisplayManager()
         self.phases = []
@@ -39,16 +42,37 @@ class Mission:
         self.failed_attempts = 0
         self.current_phase = 0
         self.available = False
+        self.required_flags_all = []
+        self.required_flags_any = []
+        self.blocked_flags = []
         
     def is_available(self, protagonist):
+        district_reputation_ok = True
+        if self.district_name:
+            district_reputation_ok = protagonist.get_district_reputation(self.district_name) >= -20
         return (protagonist.chapter >= self.chapter and 
                 not self.completed and 
-                self.available)
+                self.available and
+                district_reputation_ok)
+
+    def get_effective_difficulty(self, protagonist):
+        if not self.district_name:
+            return self.difficulty
+        district_rep = protagonist.get_district_reputation(self.district_name)
+        difficulty_modifier = 0
+        if district_rep <= -40:
+            difficulty_modifier = 2
+        elif district_rep <= -20:
+            difficulty_modifier = 1
+        elif district_rep >= 40:
+            difficulty_modifier = -1
+        return max(1, self.difficulty + difficulty_modifier)
     
     def start_mission(self, protagonist):
         self.current_phase = 0
+        effective_difficulty = self.get_effective_difficulty(protagonist)
         print(f"\n[MISSION] MISSION START: {self.name}")
-        print(f"Schwierigkeit: {'⭐' * self.difficulty}")
+        print(f"Schwierigkeit: {'⭐' * effective_difficulty}")
         time.sleep(2)
         return self.execute_current_phase(protagonist)
     
@@ -106,12 +130,15 @@ class Mission:
         self.text_display.display_mission_text(phase.description)
         
         success_chance = phase.base_success_chance
+        effective_difficulty = self.get_effective_difficulty(protagonist)
         success_chance += (protagonist.level * 0.05)
         success_chance += (protagonist.combat_skill * 0.02) if phase.combat_check else 0
         success_chance += (protagonist.stealth * 0.02) if phase.stealth_check else 0
-        if hasattr(protagonist, "hallucination_intensity"):
-            perception_penalty = protagonist.hallucination_intensity * random.uniform(0.05, 0.25)
-            success_chance -= perception_penalty
+        success_chance -= (effective_difficulty - 1) * 0.04
+        
+        if self.district_name:
+            district_rep = protagonist.get_district_reputation(self.district_name)
+            success_chance += district_rep * 0.001
         
         if random.random() < success_chance:
             print(f"\n[ERFOLG] {phase.success_message}")
@@ -137,6 +164,9 @@ class Mission:
         protagonist.wanted_level = min(5, protagonist.wanted_level + phase.wanted_increase)
         
         escape_chance = 0.4 + (protagonist.stealth * 0.03) - (protagonist.wanted_level * 0.1)
+        if self.district_name:
+            district_rep = protagonist.get_district_reputation(self.district_name)
+            escape_chance += district_rep * 0.001
         
         if random.random() < escape_chance:
             print(f"\n[ERFOLG] {phase.escape_success_message}")
@@ -173,7 +203,11 @@ class Mission:
                     self.apply_rewards(choice['rewards'], protagonist)
                 if choice.get('consequences'):
                     self.apply_consequences(choice['consequences'], protagonist)
-                
+
+                if hasattr(protagonist, "journal"):
+                    protagonist.journal.record_choice(choice.get('text', ''), choice.get('response', ''))
+                    protagonist.update_journal_state()
+
                 self.current_phase += 1
                 return self.execute_current_phase(protagonist)
             else:
@@ -229,6 +263,9 @@ class Mission:
         if rewards.get('partner_trust'):
             protagonist.partner_trust = min(100, protagonist.partner_trust + rewards['partner_trust'])
             print(f"+{rewards['partner_trust']} Partner-Vertrauen")
+
+        if hasattr(protagonist, "journal"):
+            protagonist.update_journal_state()
     
     def apply_consequences(self, consequences, protagonist):
         if consequences.get('cash'):
@@ -243,6 +280,9 @@ class Mission:
         if consequences.get('partner_trust'):
             protagonist.partner_trust = max(0, protagonist.partner_trust - consequences['partner_trust'])
             print(f"-{consequences['partner_trust']} Partner-Vertrauen")
+
+        if hasattr(protagonist, "journal"):
+            protagonist.update_journal_state()
     
     def complete_mission(self, protagonist):
         self.completed = True
@@ -263,10 +303,23 @@ class Mission:
                 protagonist.story_flags["available_missions"].append("Beach Party Cleanup")
                 print("\n🔓 NEUE MISSION FREIGESCHALTET: Beach Party Cleanup")
         
+        if self.name in ("Beach Party Cleanup", "First Taste of Vice City", "Broken Pact", "Ride or Die: Harbor Strike"):
+            loyalty_mission = protagonist.mission_manager.all_missions.get("Ride or Die: Harbor Strike")
+            broken_mission = protagonist.mission_manager.all_missions.get("Broken Pact")
+            if loyalty_mission and protagonist.partner_trust >= 70 and not loyalty_mission.completed:
+                loyalty_mission.available = True
+                print("\n🔓 VERTRAUENS-PFAD FREIGESCHALTET: Ride or Die: Harbor Strike")
+            if broken_mission and protagonist.partner_trust <= 35 and not broken_mission.completed:
+                broken_mission.available = True
+                print("\n🔓 MISSTRAUENS-PFAD FREIGESCHALTET: Broken Pact")
+        
         protagonist.story_manager.check_chapter_progression(protagonist)
         
         if not protagonist.story_flags.get("first_mission_completed"):
             protagonist.story_flags["first_mission_completed"] = True
             protagonist.story_manager.trigger_story_event("first_crime", protagonist)
         
+        if hasattr(protagonist, "journal"):
+            protagonist.update_journal_state()
+
         return True

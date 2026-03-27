@@ -44,6 +44,7 @@ class StoryManager:
             "first_crime": "Dein erstes Verbrechen in Vice City. Das Adrenalin pulsiert durch deine Adern, aber ein Schatten in Form eines Drachen huscht über die Wand.",
             "first_dragon": "Zum ersten Mal siehst du ihn klar - ein Drache aus Neonlicht und Schatten. Er ist real, oder? Die Konsequenzen deiner Taten nehmen Form an.",
             "partner_trust_low": "Das Misstrauen zwischen euch wächst. In den Neonlichtern siehst du Drachenaugen, die dich verurteilen.",
+            "partner_trust_high": "Dein Partner steht hinter dir. Für einen Moment wirken die Drachen kleiner als eure Loyalität.",
             "high_wanted": "Dein Gesicht ist überall. Die Stadt wird zu einem Käfig, und die Drachen lauern an jeder Ecke.",
             "drug_overdose": "Die Drogen wirken stärker als erwartet. Die Drachen tanzen um dich herum und flüstern von deinen Fehlern.",
             "betrayal": "Verrat schmerzt mehr als jede Kugel. Ein Drache des Misstrauens erhebt sich in deinem Herzen.",
@@ -68,5 +69,17 @@ class StoryManager:
             self.text_display.display_progressive(chapter_info['opening'])
             if 'theme' in chapter_info:
                 print(f"Thema: {chapter_info['theme']}")
+            self.trigger_dynamic_consequence_events(protagonist, new_chapter)
             return True
         return False
+
+    def trigger_dynamic_consequence_events(self, protagonist, chapter):
+        if not hasattr(protagonist, "consequence_manager"):
+            return
+
+        shown_events = protagonist.story_flags.setdefault("shown_consequence_events", [])
+        dynamic_events = protagonist.consequence_manager.get_chapter_events(chapter, shown_events)
+
+        for event_id, event_text in dynamic_events:
+            self.text_display.display_story_event(event_text)
+            shown_events.append(event_id)
