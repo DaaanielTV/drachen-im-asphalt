@@ -39,8 +39,15 @@ class Mission:
         self.failed_attempts = 0
         self.current_phase = 0
         self.available = False
+        self.min_partner_trust = None
+        self.max_partner_trust = None
+        self.locked_reason = ""
         
     def is_available(self, protagonist):
+        if self.min_partner_trust is not None and protagonist.partner_trust < self.min_partner_trust:
+            return False
+        if self.max_partner_trust is not None and protagonist.partner_trust > self.max_partner_trust:
+            return False
         return (protagonist.chapter >= self.chapter and 
                 not self.completed and 
                 self.available)
@@ -103,6 +110,12 @@ class Mission:
         success_chance += (protagonist.level * 0.05)
         success_chance += (protagonist.combat_skill * 0.02) if phase.combat_check else 0
         success_chance += (protagonist.stealth * 0.02) if phase.stealth_check else 0
+        if protagonist.partner_trust >= 70:
+            success_chance += 0.1
+            print("[PARTNER] Dein Partner deckt dich. Erfolgschance erhöht!")
+        elif protagonist.partner_trust <= 30:
+            success_chance -= 0.15
+            print("[PARTNER] Es kommt zum Streit im Team. Erfolgschance sinkt!")
         
         if random.random() < success_chance:
             print(f"\n[ERFOLG] {phase.success_message}")
@@ -121,6 +134,12 @@ class Mission:
         protagonist.wanted_level = min(5, protagonist.wanted_level + phase.wanted_increase)
         
         escape_chance = 0.4 + (protagonist.stealth * 0.03) - (protagonist.wanted_level * 0.1)
+        if protagonist.partner_trust >= 75:
+            escape_chance += 0.12
+            print("[PARTNER] Dein Partner hat eine sichere Route vorbereitet.")
+        elif protagonist.partner_trust <= 25:
+            escape_chance -= 0.18
+            print("[PARTNER] Dein Partner zweifelt an dir. Die Flucht wird chaotisch.")
         
         if random.random() < escape_chance:
             print(f"\n[ERFOLG] {phase.escape_success_message}")
@@ -144,6 +163,9 @@ class Mission:
                     self.apply_rewards(choice['rewards'], protagonist)
                 if choice.get('consequences'):
                     self.apply_consequences(choice['consequences'], protagonist)
+                if choice.get('partner_betrayal'):
+                    protagonist.story_flags["partner_betrayed"] = True
+                    protagonist.story_manager.trigger_story_event("betrayal", protagonist)
                 
                 self.current_phase += 1
                 return self.execute_current_phase(protagonist)
@@ -198,8 +220,7 @@ class Mission:
             protagonist.stamina = min(protagonist.level * 25, protagonist.stamina + rewards['stamina'])
             print(f"+{rewards['stamina']} Ausdauer")
         if rewards.get('partner_trust'):
-            protagonist.partner_trust = min(100, protagonist.partner_trust + rewards['partner_trust'])
-            print(f"+{rewards['partner_trust']} Partner-Vertrauen")
+            protagonist.adjust_partner_trust(rewards['partner_trust'])
     
     def apply_consequences(self, consequences, protagonist):
         if consequences.get('cash'):
@@ -212,8 +233,7 @@ class Mission:
             protagonist.stamina = max(1, protagonist.stamina - consequences['stamina'])
             print(f"-{consequences['stamina']} Ausdauer")
         if consequences.get('partner_trust'):
-            protagonist.partner_trust = max(0, protagonist.partner_trust - consequences['partner_trust'])
-            print(f"-{consequences['partner_trust']} Partner-Vertrauen")
+            protagonist.adjust_partner_trust(-consequences['partner_trust'])
     
     def complete_mission(self, protagonist):
         self.completed = True
@@ -233,6 +253,16 @@ class Mission:
                     protagonist.story_flags["available_missions"] = []
                 protagonist.story_flags["available_missions"].append("Beach Party Cleanup")
                 print("\n🔓 NEUE MISSION FREIGESCHALTET: Beach Party Cleanup")
+        
+        if self.name in ("Beach Party Cleanup", "First Taste of Vice City", "Broken Pact", "Ride or Die: Harbor Strike"):
+            loyalty_mission = protagonist.mission_manager.all_missions.get("Ride or Die: Harbor Strike")
+            broken_mission = protagonist.mission_manager.all_missions.get("Broken Pact")
+            if loyalty_mission and protagonist.partner_trust >= 70 and not loyalty_mission.completed:
+                loyalty_mission.available = True
+                print("\n🔓 VERTRAUENS-PFAD FREIGESCHALTET: Ride or Die: Harbor Strike")
+            if broken_mission and protagonist.partner_trust <= 35 and not broken_mission.completed:
+                broken_mission.available = True
+                print("\n🔓 MISSTRAUENS-PFAD FREIGESCHALTET: Broken Pact")
         
         protagonist.story_manager.check_chapter_progression(protagonist)
         
