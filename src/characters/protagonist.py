@@ -52,8 +52,11 @@ class Protagonist:
             "first_dragon_seen": False,
             "partner_betrayed": False,
             "redemption_offered": False,
-            "first_mission_completed": False
+            "first_mission_completed": False,
+            "decision_flags": {},
+            "shown_consequence_events": []
         }
+        self.consequence_manager = ConsequenceManager(self.story_flags["decision_flags"])
         self.mission_manager = MissionManager()
         self.district_manager = DistrictManager(self)
         self.current_district_context = None
@@ -327,10 +330,13 @@ class Protagonist:
     
     def _handle_police_choice(self, police_type, action):
         if action == "kämpfen":
+            self.record_decision("police_heat_high", f"police_encounter:{police_type}")
             self.combat_police(police_type)
         elif action == "fliehen":
+            self.record_decision("silent_operator", f"police_encounter:{police_type}")
             self.flee_police(police_type)
         elif action == "bestechen":
+            self.record_decision("corrupt_contacts", f"police_encounter:{police_type}")
             self.bribe_police(police_type)
         else:
             print("Du zögerst zu lange!")
@@ -1465,12 +1471,14 @@ class Protagonist:
             {
                 "text": "Klingt gut. Ich mache es.",
                 "response": "Rico: Perfekt. Ich wusste, ich kann auf dich zählen.",
-                "rewards": {"partner_trust": 2}
+                "rewards": {"partner_trust": 2},
+                "decision_flag": "loyal_to_rico"
             },
             {
                 "text": "Was ist der Haken?",
                 "response": "Rico: Kein Haken. Nur ein einfacher Job für einen einfachen Start.",
-                "consequences": {"partner_trust": -1}
+                "consequences": {"partner_trust": -1},
+                "decision_flag": "skeptical_of_rico"
             }
         ]
         
@@ -1566,6 +1574,7 @@ class Protagonist:
         phase4.escape_failure_message = "Die Polizei stellt dich! Du landest kurzzeitig in Gewahrsam."
         
         mission.phases = [phase1, phase2, phase3, phase4]
+        mission.blocked_flags = ["police_heat_high"]
         mission.available = False
         self.mission_manager.register_mission(mission)
     
@@ -1678,7 +1687,10 @@ class Protagonist:
                 "first_crime_committed": False,
                 "first_dragon_seen": False,
                 "partner_betrayed": False,
-                "redemption_offered": False
+                "redemption_offered": False,
+                "first_mission_completed": False,
+                "decision_flags": {},
+                "shown_consequence_events": []
             })
             self.journal = Journal.from_dict(save_data.get("journal", {}))
             self.text_display.clear_screen_enabled = save_data.get("clear_screen_enabled", False)

@@ -40,6 +40,9 @@ class Mission:
         self.failed_attempts = 0
         self.current_phase = 0
         self.available = False
+        self.required_flags_all = []
+        self.required_flags_any = []
+        self.blocked_flags = []
         
     def is_available(self, protagonist):
         district_reputation_ok = True
