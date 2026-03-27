@@ -251,12 +251,16 @@ class Mission:
             return False
     
     def apply_rewards(self, rewards, protagonist):
+        reward_multiplier = getattr(protagonist, "get_reward_multiplier", lambda: 1.0)()
+        
         if rewards.get('cash'):
-            protagonist.cash += rewards['cash']
-            print(f"+${rewards['cash']} Cash")
+            cash_reward = int(rewards['cash'] * reward_multiplier)
+            protagonist.cash += cash_reward
+            print(f"+${cash_reward} Cash")
         if rewards.get('reputation'):
-            protagonist.reputation += rewards['reputation']
-            print(f"+{rewards['reputation']} Reputation")
+            reputation_reward = max(1, int(rewards['reputation'] * reward_multiplier))
+            protagonist.reputation += reputation_reward
+            print(f"+{reputation_reward} Reputation")
         if rewards.get('stamina'):
             protagonist.stamina = min(protagonist.level * 25, protagonist.stamina + rewards['stamina'])
             print(f"+{rewards['stamina']} Ausdauer")

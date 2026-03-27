@@ -98,7 +98,15 @@ def game_loop(protagonist, dragon):
         elif choice == "8":
             protagonist.confront_dragon(dragon)
             protagonist.save_dragon(dragon)
-            if protagonist.dragon_defeated:
+            if protagonist.run_completed:
+                protagonist.show_endgame_summary()
+                if protagonist.ng_plus_unlocked:
+                    replay_choice = input("\nMoechtest du New Game+ starten? (j/n) ")
+                    if replay_choice.lower() == "j":
+                        if protagonist.start_new_game_plus():
+                            dragon = ViceCityDragon()
+                            protagonist.save_dragon(dragon)
+                            continue
                 print("\n*** VICE CITY DRAGONS BEENDET! ***")
                 print("Danke fuers Spielen dieser kriminellen Saga!")
                 break
@@ -114,6 +122,12 @@ def game_loop(protagonist, dragon):
                 protagonist.save_dragon(dragon)
             print("Auf Wiedersehen, Krimineller!")
             break
+        elif choice == "11" and protagonist.ng_plus_unlocked:
+            protagonist.show_endgame_summary()
+        elif choice == "12" and protagonist.ng_plus_unlocked:
+            if protagonist.start_new_game_plus():
+                dragon = ViceCityDragon()
+                protagonist.save_dragon(dragon)
         else:
             print("Ungültige Wahl, bitte versuche es erneut.")
 
