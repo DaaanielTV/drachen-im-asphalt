@@ -1493,7 +1493,7 @@ class Protagonist:
         
         if random.random() < police_chance:
             print("\n[POLICE] Ein Polizist hat dich bemerkt!")
-            self.police_encounter("police")
+            self.police_encounter()
         else:
             print(f"\n[SUCCESS] Erfolgreicher Diebstahl bei {tourist_type}!")
             print(f"Basis: ${base_cash} + Saison-Bonus: ${bonus_cash} = ${total_cash}")
