@@ -39,8 +39,18 @@ class Mission:
         self.failed_attempts = 0
         self.current_phase = 0
         self.available = False
+        self.required_flags_all = []
+        self.required_flags_any = []
+        self.blocked_flags = []
         
     def is_available(self, protagonist):
+        if hasattr(protagonist, "consequence_manager"):
+            if not protagonist.consequence_manager.meets_requirements(
+                require_all=self.required_flags_all,
+                require_any=self.required_flags_any,
+                block_if_any=self.blocked_flags,
+            ):
+                return False
         return (protagonist.chapter >= self.chapter and 
                 not self.completed and 
                 self.available)
@@ -103,6 +113,11 @@ class Mission:
         success_chance += (protagonist.level * 0.05)
         success_chance += (protagonist.combat_skill * 0.02) if phase.combat_check else 0
         success_chance += (protagonist.stealth * 0.02) if phase.stealth_check else 0
+        if hasattr(protagonist, "consequence_manager"):
+            modifiers = protagonist.consequence_manager.get_mission_modifiers(self.name)
+            success_chance += modifiers.get("action_success_bonus", 0)
+            if phase.stealth_check:
+                success_chance += modifiers.get("stealth_success_bonus", 0)
         
         if random.random() < success_chance:
             print(f"\n[ERFOLG] {phase.success_message}")
@@ -121,6 +136,9 @@ class Mission:
         protagonist.wanted_level = min(5, protagonist.wanted_level + phase.wanted_increase)
         
         escape_chance = 0.4 + (protagonist.stealth * 0.03) - (protagonist.wanted_level * 0.1)
+        if hasattr(protagonist, "consequence_manager"):
+            modifiers = protagonist.consequence_manager.get_mission_modifiers(self.name)
+            escape_chance += modifiers.get("escape_success_bonus", 0)
         
         if random.random() < escape_chance:
             print(f"\n[ERFOLG] {phase.escape_success_message}")
@@ -144,6 +162,12 @@ class Mission:
                     self.apply_rewards(choice['rewards'], protagonist)
                 if choice.get('consequences'):
                     self.apply_consequences(choice['consequences'], protagonist)
+                if choice.get('decision_flag') and hasattr(protagonist, "record_decision"):
+                    protagonist.record_decision(
+                        choice['decision_flag'],
+                        source=f"mission_choice:{self.name}:{phase.name}",
+                        metadata={"choice_text": choice['text']}
+                    )
                 
                 self.current_phase += 1
                 return self.execute_current_phase(protagonist)
