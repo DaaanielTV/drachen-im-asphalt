@@ -51,6 +51,7 @@ class Protagonist:
             "first_crime_committed": False,
             "first_dragon_seen": False,
             "partner_betrayed": False,
+            "partner_loyalty_path": False,
             "redemption_offered": False,
             "first_mission_completed": False,
             "decision_flags": {},
@@ -558,12 +559,8 @@ class Protagonist:
             print(f"Du wirst von der {gang_type} besiegt!")
             self.cash = max(0, self.cash // 3)
             self.stamina = max(1, self.stamina - 20)
-            self.partner_trust = max(0, self.partner_trust - 15)
-            print("Du verlierst Geld und das Vertrauen deines Partners!")
-            
-            if self.partner_trust < 30 and not self.story_flags["partner_betrayed"]:
-                self.story_flags["partner_betrayed"] = True
-                self.story_manager.trigger_story_event("partner_trust_low", self)
+            print("Du verlierst Geld und das Vertrauen deines Partners!")            
+            self.adjust_partner_trust(-15, "Niederlage gegen Gang")
             
             if random.random() < 0.6:
                 dragon = DragonHallucination()
@@ -1332,7 +1329,7 @@ class Protagonist:
             print(f"\n[SUCCESS] Menschenhandel unterbunden! Belohnung: ${reward_money}")
             self.cash += reward_money
             district.reputation += 5
-            self.partner_trust = min(100, self.partner_trust + 10)
+            self.adjust_partner_trust(10, "Partner respektiert deine Hilfe")
             self.stamina -= 12
         else:
             print("\n[FAILURE] Die Menschenhändler sind zu stark!")
@@ -1476,6 +1473,12 @@ class Protagonist:
         reward = random.randint(10000, 25000)
         self.cash += reward
         print(f"Du findest einen Weg zu einem ehrlichen Leben und erhaelst ${reward} aus legitimen Quellen!")
+        if self.partner_trust >= 75:
+            print("Dein Partner bleibt an deiner Seite. Ihr verlasst Vice City gemeinsam - Loyalitäts-Ende.")
+        elif self.partner_trust <= 25:
+            print("Du überlebst, aber allein. Dein Partner ist verschwunden - Einsames-Ende.")
+        else:
+            print("Ihr geht getrennte Wege, aber ohne offenen Verrat - Bittersüßes Ende.")
         print("Die Vice City Dragons Saga ist beendet. Du bist frei!")
         
         self.dragon_defeated = True
@@ -1490,16 +1493,31 @@ class Protagonist:
         self.partner_trust = 0
         self.days += 7
         self.stamina = 10
-        
+        if self.story_flags.get("partner_betrayed"):
+            print("Dein Partner verrät dich an die Polizei. Das ist das Verrats-Ende.")
+        else:
+            print("Dein Partner kann dich nicht mehr retten. Ihr scheitert gemeinsam.")
         print("Alles ist verloren. Das kriminelle Leben hat dich bezahlt.")
     
     def visit_mission_board(self):
         print("\n[MISSION] MISSION-BRETT")
         print("Verfügbare Missionen und Kontakte:")
+        print(f"Aktuelles Partner-Vertrauen: {self.partner_trust}%")
         
         self.mission_manager.check_mission_unlocks(self)
         
         available_missions = self.mission_manager.get_available_missions(self)
+        locked_by_trust = []
+        for mission in self.mission_manager.all_missions.values():
+            if mission.completed or mission.available:
+                continue
+            trust_locked = (
+                mission.min_partner_trust is not None and self.partner_trust < mission.min_partner_trust
+            ) or (
+                mission.max_partner_trust is not None and self.partner_trust > mission.max_partner_trust
+            )
+            if trust_locked:
+                locked_by_trust.append(mission)
         
         if not available_missions:
             print("Keine Missionen verfügbar. Erhöhe deine Reputation oder Level.")
@@ -1511,6 +1529,11 @@ class Protagonist:
             effective_difficulty = mission.get_effective_difficulty(self)
             print(f"{i+1}. {mission.name} (Kapitel {mission.chapter}, {'*' * effective_difficulty})")
             print(f"   Belohnung: ${mission.rewards.get('cash', 0)}, +{mission.rewards.get('reputation', 0)} Reputation")
+        
+        if locked_by_trust:
+            print("\n[MISSION] Vertrauensabhängige Pfade (derzeit gesperrt):")
+            for mission in locked_by_trust:
+                print(f"- {mission.name}: {mission.locked_reason}")
         
         print(f"{len(available_missions)+1}. Zurück zum Hauptmenü")
         
@@ -1660,6 +1683,18 @@ class Protagonist:
             {"speaker": "Maria", "text": "Ich brauche jemanden, der sie zurückholt. Jemand, der nicht bekannt ist."},
             {"speaker": "Maria", "text": "Die Party ist heute Nacht in Ocean Beach. Sei vorsichtig - die Vipers sind gefährlich."}
         ]
+        phase1.choices = [
+            {
+                "text": "Ich hole alles zurück und bringe dich sicher raus.",
+                "response": "Maria: Danke. Genau deshalb vertraue ich dir.",
+                "rewards": {"partner_trust": 6}
+            },
+            {
+                "text": "Ich erledige den Job, aber dein Risiko ist nicht mein Problem.",
+                "response": "Maria: Kalt. Aber ich habe keine Wahl.",
+                "consequences": {"partner_trust": 5}
+            }
+        ]
         
         phase2 = MissionPhase(
             "Party-Infiltration",
@@ -1705,6 +1740,118 @@ class Protagonist:
         
         mission.phases = [phase1, phase2, phase3, phase4]
         mission.blocked_flags = ["police_heat_high"]
+        mission.available = False
+        self.mission_manager.register_mission(mission)
+        
+        self.create_partner_loyalty_mission()
+        self.create_broken_pact_mission()
+
+    def create_partner_loyalty_mission(self):
+        mission = Mission(
+            "Ride or Die: Harbor Strike",
+            2,
+            4,
+            {"cash": 1500, "reputation": 12, "partner_trust": 8},
+            self.text_display
+        )
+        mission.min_partner_trust = 70
+        mission.locked_reason = "Benötigt Partner-Vertrauen von mindestens 70."
+
+        phase1 = MissionPhase(
+            "Gemeinsamer Plan",
+            "dialogue",
+            "Dein Partner teilt Insider-Infos: Ein Schmugglerkonvoi fährt heute durch Viceport."
+        )
+        phase1.dialogue = [
+            {"speaker": "Partner", "text": "Ich habe alles vorbereitet. Heute ziehen wir den Coup gemeinsam durch."},
+            {"speaker": "Partner", "text": "Wenn du bei mir bleibst, kommen wir beide lebend raus."}
+        ]
+        phase1.choices = [
+            {
+                "text": "Wir ziehen das als Team durch.",
+                "response": "Partner: Genau deshalb vertraue ich dir mein Leben an.",
+                "rewards": {"partner_trust": 4}
+            },
+            {
+                "text": "Ich nutze dich als Ablenkung und kassiere allein.",
+                "response": "Partner: Was...? Du lässt mich einfach zurück?!",
+                "consequences": {"partner_trust": 20, "wanted_level": 1},
+                "partner_betrayal": True
+            }
+        ]
+
+        phase2 = MissionPhase(
+            "Konvoi-Hack",
+            "action",
+            "Du und dein Partner knacken die Konvoi-Sicherung in einem engen Zeitfenster."
+        )
+        phase2.stealth_check = True
+        phase2.base_success_chance = 0.55
+        phase2.success_message = "Synchroner Zugriff! Die Konvoi-Daten sind in eurer Hand."
+        phase2.failure_message = "Die Sicherheitsdrohne erkennt euch. Das Team gerät in Panik."
+        phase2.success_rewards = {"reputation": 4}
+        phase2.failure_consequences = {"stamina": 10, "partner_trust": 8}
+
+        phase3 = MissionPhase(
+            "Exfiltration",
+            "escape",
+            "Schwer bewaffnete Einheiten riegeln das Viertel ab. Nur perfekte Abstimmung rettet euch."
+        )
+        phase3.wanted_increase = 2
+        phase3.escape_success_message = "Ihr nutzt die Tunnelroute deines Partners und entkommt sauber."
+        phase3.escape_failure_message = "Ihr verliert euch im Chaos und müsst alles fallen lassen."
+
+        mission.phases = [phase1, phase2, phase3]
+        mission.available = False
+        self.mission_manager.register_mission(mission)
+
+    def create_broken_pact_mission(self):
+        mission = Mission(
+            "Broken Pact",
+            2,
+            3,
+            {"cash": 700, "reputation": 5},
+            self.text_display
+        )
+        mission.max_partner_trust = 35
+        mission.locked_reason = "Nur bei niedrigem Partner-Vertrauen verfügbar (35 oder weniger)."
+
+        phase1 = MissionPhase(
+            "Eskalation im Safehouse",
+            "dialogue",
+            "Ein Streit im Safehouse eskaliert: Dein Partner konfrontiert dich mit deinen Entscheidungen."
+        )
+        phase1.dialogue = [
+            {"speaker": "Partner", "text": "Ich kann dir nicht mehr vertrauen. Zu viele Lügen, zu viele Leichen."},
+            {"speaker": "Partner", "text": "Letzte Chance: Wahrheit oder Krieg."}
+        ]
+        phase1.choices = [
+            {
+                "text": "Ich entschuldige mich und gebe deinen Anteil.",
+                "response": "Partner: ...Vielleicht gibt es noch Hoffnung.",
+                "consequences": {"cash": 400},
+                "rewards": {"partner_trust": 12}
+            },
+            {
+                "text": "Ich drohe dir und nehme alles.",
+                "response": "Partner: Dann endet es hier.",
+                "consequences": {"partner_trust": 15},
+                "partner_betrayal": True
+            }
+        ]
+
+        phase2 = MissionPhase(
+            "Nacht der Vergeltung",
+            "action",
+            "Die Situation kippt. Informanten, Sirenen und Verrat machen jeden Schritt gefährlich."
+        )
+        phase2.combat_check = True
+        phase2.base_success_chance = 0.45
+        phase2.success_message = "Du kommst durch, aber die Beziehung ist schwer beschädigt."
+        phase2.failure_message = "Du tappst in den Hinterhalt deines Ex-Partners."
+        phase2.failure_consequences = {"stamina": 15, "wanted_level": 2, "partner_trust": 10}
+
+        mission.phases = [phase1, phase2]
         mission.available = False
         self.mission_manager.register_mission(mission)
     

@@ -44,6 +44,7 @@ class StoryManager:
             "first_crime": "Dein erstes Verbrechen in Vice City. Das Adrenalin pulsiert durch deine Adern, aber ein Schatten in Form eines Drachen huscht über die Wand.",
             "first_dragon": "Zum ersten Mal siehst du ihn klar - ein Drache aus Neonlicht und Schatten. Er ist real, oder? Die Konsequenzen deiner Taten nehmen Form an.",
             "partner_trust_low": "Das Misstrauen zwischen euch wächst. In den Neonlichtern siehst du Drachenaugen, die dich verurteilen.",
+            "partner_trust_high": "Dein Partner steht hinter dir. Für einen Moment wirken die Drachen kleiner als eure Loyalität.",
             "high_wanted": "Dein Gesicht ist überall. Die Stadt wird zu einem Käfig, und die Drachen lauern an jeder Ecke.",
             "drug_overdose": "Die Drogen wirken stärker als erwartet. Die Drachen tanzen um dich herum und flüstern von deinen Fehlern.",
             "betrayal": "Verrat schmerzt mehr als jede Kugel. Ein Drache des Misstrauens erhebt sich in deinem Herzen.",

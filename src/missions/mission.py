@@ -277,6 +277,16 @@ class Mission:
                 protagonist.story_flags["available_missions"].append("Beach Party Cleanup")
                 print("\n🔓 NEUE MISSION FREIGESCHALTET: Beach Party Cleanup")
         
+        if self.name in ("Beach Party Cleanup", "First Taste of Vice City", "Broken Pact", "Ride or Die: Harbor Strike"):
+            loyalty_mission = protagonist.mission_manager.all_missions.get("Ride or Die: Harbor Strike")
+            broken_mission = protagonist.mission_manager.all_missions.get("Broken Pact")
+            if loyalty_mission and protagonist.partner_trust >= 70 and not loyalty_mission.completed:
+                loyalty_mission.available = True
+                print("\n🔓 VERTRAUENS-PFAD FREIGESCHALTET: Ride or Die: Harbor Strike")
+            if broken_mission and protagonist.partner_trust <= 35 and not broken_mission.completed:
+                broken_mission.available = True
+                print("\n🔓 MISSTRAUENS-PFAD FREIGESCHALTET: Broken Pact")
+        
         protagonist.story_manager.check_chapter_progression(protagonist)
         
         if not protagonist.story_flags.get("first_mission_completed"):
