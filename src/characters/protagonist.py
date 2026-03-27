@@ -41,6 +41,9 @@ class Protagonist:
         self.reputation = 0
         self.drug_effects = []
         self.dragon_encounters = 0
+        self.stress_level = 20
+        self.hallucination_intensity = 0.0
+        self.delayed_consequences = []
         self.chapter = 1
         self.partner_trust = 100
         self.ankle_monitor = character_type == "lucia"
@@ -99,6 +102,7 @@ class Protagonist:
         print(f"[REPUTATION] Reputation: {self.reputation}")
         print(f"[TAGE] Tage in Vice City: {self.days}")
         print(f"[DRACHEN] Drachen-Begegnungen: {self.dragon_encounters}")
+        print(f"[PSYCHE] Stress: {self.stress_level} | Halluzinations-Intensität: {self.hallucination_intensity:.2f}")
         print(f"[PARTNER] Partner-Vertrauen: {self.partner_trust}%")
         if self.ankle_monitor:
             print("[FUSSFESSEL] Fußfessel aktiv (Einschränkungen bei Aktivitäten)")
@@ -126,18 +130,100 @@ class Protagonist:
     
     def switch_character(self):
         pass
+
+    def get_drug_pressure(self):
+        if not self.drug_effects:
+            return 0.0
+        pressure = 0.0
+        for effect in self.drug_effects:
+            if effect.duration <= 0:
+                continue
+            pressure += effect.intensity * (effect.remaining / effect.duration)
+        return min(1.5, pressure)
+
+    def update_psychological_state(self, context="general"):
+        base_stress = (self.wanted_level * 6) + (5 if self.partner_trust < 35 else 0)
+        self.stress_level = min(100, max(0, self.stress_level + base_stress // 4))
+
+        active_effects = []
+        for effect in self.drug_effects:
+            hallucinated = effect.apply_effect(self)
+            if hallucinated:
+                self.dragon_encounters += 1
+            if effect.remaining > 0:
+                active_effects.append(effect)
+        self.drug_effects = active_effects
+
+        pressure = self.get_drug_pressure()
+        self.hallucination_intensity = min(1.0, (self.stress_level / 100) * 0.65 + (pressure * 0.55))
+
+        if context == "rest":
+            self.stress_level = max(0, self.stress_level - 20)
+        elif context == "combat":
+            self.stress_level = min(100, self.stress_level + 8)
+
+        if self.hallucination_intensity > 0.55 and random.random() < self.hallucination_intensity * 0.2:
+            dragon = DragonHallucination()
+            trigger = random.choice(["high_stress", "drug_use"])
+            dragon.trigger_encounter(trigger, self, self.hallucination_intensity)
+
+    def apply_delayed_consequences(self):
+        if not self.delayed_consequences:
+            return
+        pending = self.delayed_consequences[:]
+        self.delayed_consequences = []
+        print("\n[SPÄTFOLGEN] Verdrängte Konsequenzen holen dich ein...")
+        for consequence in pending:
+            if consequence == "wanted_spike":
+                self.wanted_level = min(5, self.wanted_level + 1)
+                print("Sirenen in der Ferne: Wanted Level steigt um 1.")
+            elif consequence == "cash_loss":
+                lost = random.randint(80, 220)
+                self.cash = max(0, self.cash - lost)
+                print(f"Du bemerkst einen fehlenden Geldstapel: -${lost}.")
+            elif consequence == "trust_drop":
+                self.partner_trust = max(0, self.partner_trust - 8)
+                print("Dein Partner erinnert sich an dein wirres Verhalten: Vertrauen sinkt.")
+
+    def distort_text(self, text):
+        dragon = DragonHallucination()
+        return dragon.distort_text(text, self.hallucination_intensity)
+
+    def maybe_unreliable_dialogue(self, speaker, text):
+        chance = self.hallucination_intensity * 0.45
+        if random.random() < chance:
+            fragments = [
+                " ...oder war das nur ein Flüstern?",
+                " [Deine Erinnerung springt.]",
+                " (Die Stimme klingt plötzlich wie ein Drachenknurren.)"
+            ]
+            return self.distort_text(text + random.choice(fragments))
+        return text
+
+    def build_perceived_choices(self, choices):
+        perceived = [{"kind": "real", "choice": c} for c in choices]
+        random.shuffle(perceived)
+        if self.hallucination_intensity > 0.45 and random.random() < self.hallucination_intensity * 0.6:
+            false_choice = {
+                "text": self.distort_text("Dem Drachen folgen"),
+                "response": "Du folgst einer Illusion in eine Sackgasse.",
+                "consequences": {"stamina": 6}
+            }
+            perceived.append({"kind": "false", "choice": false_choice})
+            random.shuffle(perceived)
+        return perceived
     
     def rest(self, location="sicherer Unterschlupf"):
         print(f"\n[RUHEN] Du ruhst dich in {location} aus...")
         self.days += 1
         self.stamina = self.level * 25
         self.wanted_level = max(0, self.wanted_level - 1)
+        self.update_psychological_state(context="rest")
+        self.apply_delayed_consequences()
         
-        self.drug_effects = [effect for effect in self.drug_effects if effect.remaining > 0]
-        
-        if self.dragon_encounters > 0 and random.random() < 0.3:
+        if self.dragon_encounters > 0 and random.random() < (0.2 + self.hallucination_intensity * 0.3):
             dragon = DragonHallucination()
-            dragon.trigger_encounter("high_stress", self)
+            dragon.trigger_encounter("high_stress", self, self.hallucination_intensity)
             
         print(f"Ausdauer wiederhergestellt: {self.stamina}")
         if self.wanted_level > 0:
@@ -383,6 +469,7 @@ class Protagonist:
                 self.wanted_level = min(5, self.wanted_level + 1)
     
     def criminal_encounter(self, district):
+        self.update_psychological_state(context="street")
         encounters = {
             "Ocean Beach": [
                 {"type": "police", "description": "Ein Polizist bemerkt dich bei einem Taschendiebstahl!"},
@@ -431,7 +518,7 @@ class Protagonist:
             ]
         }
         encounter = random.choice(encounters[district.name])
-        print(f"\n[WAFFEN] {encounter['description']}")
+        print(f"\n[WAFFEN] {self.distort_text(encounter['description'])}")
         
         encounter_handlers = {
             "police": self.police_encounter,
@@ -603,8 +690,7 @@ class Protagonist:
             
             if random.random() < 0.4:
                 dragon = DragonHallucination()
-                dragon.trigger_encounter("high_stress", self)
-                self.dragon_encounters += 1
+                dragon.trigger_encounter("high_stress", self, self.hallucination_intensity)
     
     def flee_police(self, police_type):
         district_rep = self.get_district_reputation()
@@ -721,8 +807,7 @@ class Protagonist:
             
             if random.random() < 0.6:
                 dragon = DragonHallucination()
-                dragon.trigger_encounter("betrayal", self)
-                self.dragon_encounters += 1
+                dragon.trigger_encounter("betrayal", self, self.hallucination_intensity)
     
     def negotiate_gang(self, gang_type):
         negotiate_chance = 0.3 + (self.reputation * 0.01) + (self.level * 0.05)
@@ -750,6 +835,7 @@ class Protagonist:
     
     def drug_encounter(self):
         print("\n[DROGEN] DROGEN-ANGEBOT")
+        self.update_psychological_state(context="drug_offer")
         action = input("Möchtest du Drogen kaufen oder ablehnen? (kaufen/ablehnen) ")
         
         if action == "kaufen":
@@ -764,10 +850,10 @@ class Protagonist:
                 effect = DrugEffect(drug["name"], drug["intensity"], drug["duration"])
                 self.drug_effects.append(effect)
                 print(f"Du kaufst {drug['name']} für $100!")
+                self.stress_level = min(100, self.stress_level + int(drug["intensity"] * 12))
                 
                 if drug["intensity"] > 0.6:
                     effect.trigger_dragon_hallucination(self)
-                    self.dragon_encounters += 1
                     
                     if not self.story_flags["first_dragon_seen"]:
                         self.story_flags["first_dragon_seen"] = True
@@ -809,6 +895,7 @@ class Protagonist:
             self.cash = max(0, self.cash // 2)
     
     def opportunity_encounter(self, opportunity_type, district):
+        self.update_psychological_state(context="opportunity")
         opportunities = {
             "tourist": {"cash": 50, "stamina_cost": 2, "description": "Du bestiehlst einen Touristen"},
             "businessman": {"cash": 150, "stamina_cost": 4, "description": "Du bestiehlst einen Geschäftsmann"},
@@ -878,6 +965,9 @@ class Protagonist:
                     print("Die Aktion schlägt fehl!")
                     self.wanted_level = min(5, self.wanted_level + 1)
                     self.stamina = max(1, self.stamina - opp["stamina_cost"] - 5)
+                    if self.hallucination_intensity > 0.6 and random.random() < 0.5:
+                        self.delayed_consequences.append("wanted_spike")
+                        print("Du bist sicher, dass dich niemand gesehen hat... vorerst.")
             else:
                 print("Du hast nicht genug Ausdauer für diese Aktion!")
         else:
@@ -1507,6 +1597,7 @@ class Protagonist:
             self.security_encounter()
     
     def visit_black_market(self):
+        self.update_psychological_state(context="market")
         weapons = [
             Weapon("Messer", 100, 5, 2),
             Weapon("Pistole", 500, 10, 3),
@@ -1657,6 +1748,8 @@ class Protagonist:
         print("Alles ist verloren. Das kriminelle Leben hat dich bezahlt.")
     
     def visit_mission_board(self):
+        self.update_psychological_state(context="mission")
+        self.apply_delayed_consequences()
         print("\n[MISSION] MISSION-BRETT")
         print("Verfügbare Missionen und Kontakte:")
         print(f"Aktuelles Partner-Vertrauen: {self.partner_trust}%")
@@ -1707,6 +1800,9 @@ class Protagonist:
             print("Ungültige Eingabe!")
     
     def start_mission(self, mission):
+        if self.hallucination_intensity > 0.5 and random.random() < self.hallucination_intensity * 0.4:
+            self.delayed_consequences.append(random.choice(["cash_loss", "trust_drop"]))
+            print("Ein inneres Flüstern lenkt dich ab. Etwas fühlt sich falsch an.")
         if self.mission_manager.start_mission(mission, self):
             print(f"\n🎉 Mission '{mission.name}' erfolgreich abgeschlossen!")
         else:
@@ -2075,6 +2171,9 @@ class Protagonist:
             "reputation": self.reputation,
             "drug_effects": [effect.__dict__ for effect in self.drug_effects],
             "dragon_encounters": self.dragon_encounters,
+            "stress_level": self.stress_level,
+            "hallucination_intensity": self.hallucination_intensity,
+            "delayed_consequences": self.delayed_consequences,
             "chapter": self.chapter,
             "partner_trust": self.partner_trust,
             "ankle_monitor": self.ankle_monitor,
@@ -2111,6 +2210,9 @@ class Protagonist:
             self.reputation = save_data["reputation"]
             self.drug_effects = [DrugEffect(**effect) for effect in save_data["drug_effects"]]
             self.dragon_encounters = save_data["dragon_encounters"]
+            self.stress_level = save_data.get("stress_level", 20)
+            self.hallucination_intensity = save_data.get("hallucination_intensity", 0.0)
+            self.delayed_consequences = save_data.get("delayed_consequences", [])
             self.chapter = save_data["chapter"]
             self.partner_trust = save_data["partner_trust"]
             self.ankle_monitor = save_data["ankle_monitor"]

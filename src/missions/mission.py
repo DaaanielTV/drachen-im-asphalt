@@ -80,6 +80,9 @@ class Mission:
         if self.current_phase >= len(self.phases):
             return self.complete_mission(protagonist)
         
+        if hasattr(protagonist, "update_psychological_state"):
+            protagonist.update_psychological_state(context="mission_phase")
+        
         phase = self.phases[self.current_phase]
         print(f"\n--- PHASE {self.current_phase + 1}: {phase.name} ---")
         time.sleep(1)
@@ -98,7 +101,10 @@ class Mission:
     def execute_dialogue_phase(self, phase, protagonist):
         self.text_display.display_mission_text(phase.description)
         for dialogue in phase.dialogue:
-            self.text_display.display_dialogue(dialogue['speaker'], dialogue['text'])
+            dialogue_text = dialogue["text"]
+            if hasattr(protagonist, "maybe_unreliable_dialogue"):
+                dialogue_text = protagonist.maybe_unreliable_dialogue(dialogue["speaker"], dialogue_text)
+            self.text_display.display_dialogue(dialogue['speaker'], dialogue_text)
         
         if phase.choices:
             return self.handle_phase_choices(phase, protagonist)
@@ -138,6 +144,13 @@ class Mission:
             print(f"\n[ERFOLG] {phase.success_message}")
             if phase.success_rewards:
                 self.apply_rewards(phase.success_rewards, protagonist)
+            if (
+                hasattr(protagonist, "hallucination_intensity")
+                and protagonist.hallucination_intensity > 0.65
+                and random.random() < protagonist.hallucination_intensity * 0.4
+            ):
+                protagonist.delayed_consequences.append(random.choice(["cash_loss", "wanted_spike"]))
+                print("Ein Detail entgeht dir im Adrenalinrausch. Die Folgen kommen später.")
             self.current_phase += 1
             return self.execute_current_phase(protagonist)
         else:
@@ -164,14 +177,27 @@ class Mission:
             return self.handle_mission_failure(protagonist)
     
     def handle_phase_choices(self, phase, protagonist):
-        for i, choice in enumerate(phase.choices):
-            print(f"{i+1}. {choice['text']}")
+        if hasattr(protagonist, "build_perceived_choices"):
+            perceived_choices = protagonist.build_perceived_choices(phase.choices)
+        else:
+            perceived_choices = [{"kind": "real", "choice": choice} for choice in phase.choices]
+        
+        for i, choice_data in enumerate(perceived_choices):
+            print(f"{i+1}. {choice_data['choice']['text']}")
         
         try:
             player_choice = int(input("Wähle eine Option: ")) - 1
-            if 0 <= player_choice < len(phase.choices):
-                choice = phase.choices[player_choice]
+            if 0 <= player_choice < len(perceived_choices):
+                chosen_data = perceived_choices[player_choice]
+                choice = chosen_data["choice"]
                 print(f"\n{choice['response']}")
+                
+                if chosen_data["kind"] == "false":
+                    if hasattr(protagonist, "delayed_consequences"):
+                        protagonist.delayed_consequences.append("trust_drop")
+                        print("Die Entscheidung war eine Halluzination. Dein Team reagiert irritiert.")
+                    self.current_phase += 1
+                    return self.execute_current_phase(protagonist)
                 
                 if choice.get('rewards'):
                     self.apply_rewards(choice['rewards'], protagonist)
@@ -213,8 +239,8 @@ class Mission:
         
         if random.random() < 0.3:
             dragon = DragonHallucination()
-            dragon.trigger_encounter("high_stress", protagonist)
-            protagonist.dragon_encounters += 1
+            intensity = getattr(protagonist, "hallucination_intensity", 0.0)
+            dragon.trigger_encounter("high_stress", protagonist, intensity)
         
         retry_choice = input("Möchtest du die Mission wiederholen? (ja/nein): ")
         if retry_choice.lower() == "ja":
