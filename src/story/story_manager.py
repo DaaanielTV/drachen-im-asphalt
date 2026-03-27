@@ -69,5 +69,17 @@ class StoryManager:
             self.text_display.display_progressive(chapter_info['opening'])
             if 'theme' in chapter_info:
                 print(f"Thema: {chapter_info['theme']}")
+            self.trigger_dynamic_consequence_events(protagonist, new_chapter)
             return True
         return False
+
+    def trigger_dynamic_consequence_events(self, protagonist, chapter):
+        if not hasattr(protagonist, "consequence_manager"):
+            return
+
+        shown_events = protagonist.story_flags.setdefault("shown_consequence_events", [])
+        dynamic_events = protagonist.consequence_manager.get_chapter_events(chapter, shown_events)
+
+        for event_id, event_text in dynamic_events:
+            self.text_display.display_story_event(event_text)
+            shown_events.append(event_id)
