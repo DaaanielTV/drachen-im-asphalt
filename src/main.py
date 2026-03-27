@@ -176,17 +176,21 @@ def game_loop(protagonist, dragon):
     }
 
     while True:
-        _print_menu()
-        raw_choice = input("Aktion waehlen (1-12 oder Alias): ").strip().lower()
-        action = command_aliases.get(raw_choice)
-
-        if not action:
-            print("Ungueltige Wahl, bitte versuche es erneut.")
-            continue
-
-        state_before = _snapshot_player_state(protagonist)
-
-        if action == "attr":
+        print("\n=== VICE CITY HAUPTMENUE ===")
+        print("1. Attribute anzeigen")
+        print("2. Rasten/Unterschlupf")
+        print("3. Vice City erkunden")
+        print("4. Schwarzmarkt besuchen")
+        print("5. Kriminelles Training")
+        print("6. Mission-Brett (Neu!)")
+        print("7. Journal & Quest-Log")
+        print("8. Drachen der Konsequenzen konfrontieren")
+        print("9. Bildschirm-Löschung umschalten")
+        print("10. Spiel speichern")
+        print("11. Spiel beenden")
+        choice = input("Waehle eine Aktion (1-11): ")
+        
+        if choice == "1":
             protagonist.display_attributes()
         elif action == "rest":
             protagonist.rest()
@@ -198,32 +202,43 @@ def game_loop(protagonist, dragon):
             protagonist.criminal_training()
         elif action == "mission":
             protagonist.visit_mission_board()
-        elif action == "boss":
+        elif choice == "7":
+            protagonist.open_journal()
+        elif choice == "8":
             protagonist.confront_dragon(dragon)
             protagonist.save_dragon(dragon)
-            if protagonist.dragon_defeated:
+            if protagonist.run_completed:
+                protagonist.show_endgame_summary()
+                if protagonist.ng_plus_unlocked:
+                    replay_choice = input("\nMoechtest du New Game+ starten? (j/n) ")
+                    if replay_choice.lower() == "j":
+                        if protagonist.start_new_game_plus():
+                            dragon = ViceCityDragon()
+                            protagonist.save_dragon(dragon)
+                            continue
                 print("\n*** VICE CITY DRAGONS BEENDET! ***")
                 print("Danke fuers Spielen dieser kriminellen Saga!")
                 break
-        elif action == "clear":
+        elif choice == "9":
             protagonist.text_display.toggle_clear_screen()
-        elif action == "lesen":
-            _handle_readability_menu(protagonist)
-        elif action == "hilfe":
-            show_main_help(protagonist)
-        elif action == "save":
+        elif choice == "10":
             protagonist.save_game()
             protagonist.save_dragon(dragon)
-        elif action == "exit":
+        elif choice == "11":
             save_choice = input("Moechtest du vor dem Beenden speichern? (j/n) ")
             if save_choice.lower() == "j":
                 protagonist.save_game()
                 protagonist.save_dragon(dragon)
             print("Auf Wiedersehen, Krimineller!")
             break
-
-        state_after = _snapshot_player_state(protagonist)
-        _print_state_change_feedback(state_before, state_after)
+        elif choice == "11" and protagonist.ng_plus_unlocked:
+            protagonist.show_endgame_summary()
+        elif choice == "12" and protagonist.ng_plus_unlocked:
+            if protagonist.start_new_game_plus():
+                dragon = ViceCityDragon()
+                protagonist.save_dragon(dragon)
+        else:
+            print("Ungültige Wahl, bitte versuche es erneut.")
 
 
 if __name__ == "__main__":

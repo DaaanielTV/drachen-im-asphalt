@@ -11,6 +11,10 @@ class DrugEffect:
     
     def apply_effect(self, protagonist):
         if self.remaining > 0:
+            if hasattr(protagonist, "stress_level"):
+                stress_shift = int((self.intensity * 6) - 1)
+                protagonist.stress_level = min(100, max(0, protagonist.stress_level + stress_shift))
+
             if self.intensity > 0.6 and random.random() < self.intensity:
                 return self.trigger_dragon_hallucination(protagonist)
             self.remaining -= 1
