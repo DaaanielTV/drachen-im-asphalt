@@ -1,4 +1,3 @@
-import json
 import time
 import random
 
@@ -8,6 +7,8 @@ from src.missions.mission_manager import MissionManager
 from src.missions.mission import Mission, MissionPhase
 from src.missions.mission_giver import MissionGiver
 from src.districts.district_manager import DistrictManager
+from src.game.mission_logic import MissionBoardService
+from src.game.persistence import GamePersistence
 from src.effects.drug_effect import DrugEffect
 from src.effects.dragon_hallucination import DragonHallucination
 from src.items.weapon import Weapon
@@ -54,6 +55,8 @@ class Protagonist:
             "first_mission_completed": False
         }
         self.mission_manager = MissionManager()
+        self.mission_board = MissionBoardService(self.mission_manager)
+        self.persistence = GamePersistence()
         self.district_manager = DistrictManager(self)
         
         if character_type == "jason":
@@ -1313,29 +1316,29 @@ class Protagonist:
         
         print("Alles ist verloren. Das kriminelle Leben hat dich bezahlt.")
     
-    def visit_mission_board(self):
+    def visit_mission_board(self, renderer=None):
         print("\n[MISSION] MISSION-BRETT")
         print("Verfügbare Missionen und Kontakte:")
-        
-        self.mission_manager.check_mission_unlocks(self)
-        
-        available_missions = self.mission_manager.get_available_missions(self)
+
+        available_missions = self.mission_board.refresh_available_missions(self)
         
         if not available_missions:
             print("Keine Missionen verfügbar. Erhöhe deine Reputation oder Level.")
             return
         
-        print("\n[MISSION] VERFÜGBARE MISSIONEN:")
-        for i, mission in enumerate(available_missions):
-            print(f"{i+1}. {mission.name} (Kapitel {mission.chapter}, {'*' * mission.difficulty})")
-            print(f"   Belohnung: ${mission.rewards.get('cash', 0)}, +{mission.rewards.get('reputation', 0)} Reputation")
-        
-        print(f"{len(available_missions)+1}. Zurück zum Hauptmenü")
+        if renderer:
+            renderer.render_mission_board(available_missions)
+        else:
+            print("\n[MISSION] VERFÜGBARE MISSIONEN:")
+            for i, mission in enumerate(available_missions):
+                print(f"{i+1}. {mission.name} (Kapitel {mission.chapter}, {'*' * mission.difficulty})")
+                print(f"   Belohnung: ${mission.rewards.get('cash', 0)}, +{mission.rewards.get('reputation', 0)} Reputation")
+            print(f"{len(available_missions)+1}. Zurück zum Hauptmenü")
         
         try:
             choice = int(input("Wähle eine Mission: ")) - 1
-            if 0 <= choice < len(available_missions):
-                mission = available_missions[choice]
+            mission = self.mission_board.select_mission(available_missions, choice)
+            if mission:
                 self.start_mission(mission)
             elif choice == len(available_missions):
                 return
@@ -1345,7 +1348,7 @@ class Protagonist:
             print("Ungültige Eingabe!")
     
     def start_mission(self, mission):
-        if self.mission_manager.start_mission(mission, self):
+        if self.mission_board.run_mission(mission, self):
             print(f"\n🎉 Mission '{mission.name}' erfolgreich abgeschlossen!")
         else:
             print(f"\n💥 Mission '{mission.name}' fehlgeschlagen oder abgebrochen.")
@@ -1542,65 +1545,15 @@ class Protagonist:
             print("Ungültige Eingabe!")
     
     def save_game(self, filename="data/saves/savegame.json"):
-        save_data = {
-            "name": self.name,
-            "character_type": self.character_type,
-            "cash": self.cash,
-            "level": self.level,
-            "inventory": [item.__dict__ for item in self.inventory],
-            "stamina": self.stamina,
-            "days": self.days,
-            "wanted_level": self.wanted_level,
-            "reputation": self.reputation,
-            "drug_effects": [effect.__dict__ for effect in self.drug_effects],
-            "dragon_encounters": self.dragon_encounters,
-            "chapter": self.chapter,
-            "partner_trust": self.partner_trust,
-            "ankle_monitor": self.ankle_monitor,
-            "combat_skill": self.combat_skill,
-            "stealth": self.stealth,
-            "dragon_defeated": getattr(self, 'dragon_defeated', False),
-            "story_flags": self.story_flags,
-            "clear_screen_enabled": self.text_display.clear_screen_enabled
-        }
-        
         try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(save_data, f, ensure_ascii=False, indent=2)
+            self.persistence.save_protagonist(self, filename)
             print(f"Spiel gespeichert als {filename}!")
         except Exception as e:
             print(f"Fehler beim Speichern: {e}")
     
     def load_game(self, filename="data/saves/savegame.json"):
         try:
-            with open(filename, 'r', encoding='utf-8') as f:
-                save_data = json.load(f)
-            
-            self.name = save_data["name"]
-            self.character_type = save_data["character_type"]
-            self.cash = save_data["cash"]
-            self.level = save_data["level"]
-            self.inventory = [Weapon(**item) for item in save_data["inventory"]]
-            self.stamina = save_data["stamina"]
-            self.days = save_data["days"]
-            self.wanted_level = save_data["wanted_level"]
-            self.reputation = save_data["reputation"]
-            self.drug_effects = [DrugEffect(**effect) for effect in save_data["drug_effects"]]
-            self.dragon_encounters = save_data["dragon_encounters"]
-            self.chapter = save_data["chapter"]
-            self.partner_trust = save_data["partner_trust"]
-            self.ankle_monitor = save_data["ankle_monitor"]
-            self.combat_skill = save_data["combat_skill"]
-            self.stealth = save_data["stealth"]
-            self.dragon_defeated = save_data.get("dragon_defeated", False)
-            self.story_flags = save_data.get("story_flags", {
-                "first_crime_committed": False,
-                "first_dragon_seen": False,
-                "partner_betrayed": False,
-                "redemption_offered": False
-            })
-            self.text_display.clear_screen_enabled = save_data.get("clear_screen_enabled", False)
-            
+            self.persistence.load_protagonist(self, filename)
             return True
         except FileNotFoundError:
             print("Kein Speicherstand gefunden!")
@@ -1610,29 +1563,14 @@ class Protagonist:
             return False
     
     def save_dragon(self, dragon, filename="data/dragon.json"):
-        dragon_data = {
-            "stamina": dragon.stamina,
-            "defeated": dragon.defeated,
-            "manifestation": dragon.manifestation
-        }
-        
         try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(dragon_data, f, ensure_ascii=False, indent=2)
+            self.persistence.save_dragon(dragon, filename)
         except Exception as e:
             print(f"Fehler beim Speichern des Drachen: {e}")
     
     def load_dragon(self, filename="data/dragon.json"):
         try:
-            with open(filename, 'r', encoding='utf-8') as f:
-                dragon_data = json.load(f)
-            
-            dragon = ViceCityDragon()
-            dragon.stamina = dragon_data["stamina"]
-            dragon.defeated = dragon_data["defeated"]
-            dragon.manifestation = dragon_data.get("manifestation", "metaphorisch")
-            
-            return dragon
+            return self.persistence.load_dragon(filename)
         except FileNotFoundError:
             return ViceCityDragon()
         except Exception as e:
