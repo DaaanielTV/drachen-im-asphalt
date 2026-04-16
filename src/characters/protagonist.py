@@ -1,9 +1,12 @@
+import json
 import time
 import random
+from pathlib import Path
 
 from src.ui.text_display import TextDisplayManager
 from src.story.story_manager import StoryManager
 from src.story.journal import Journal
+from src.story.consequence_manager import ConsequenceManager
 from src.missions.mission_manager import MissionManager
 from src.missions.mission import Mission, MissionPhase
 from src.missions.mission_giver import MissionGiver
@@ -69,6 +72,7 @@ class Protagonist:
         
         self.text_display = TextDisplayManager()
         self.story_manager = StoryManager(self.text_display)
+        self.journal = Journal()
         self.story_flags = {
             "first_crime_committed": False,
             "first_dragon_seen": False,
@@ -1799,7 +1803,7 @@ class Protagonist:
             print("Du überlebst, aber allein. Dein Partner ist verschwunden - Einsames-Ende.")
         else:
             print("Ihr geht getrennte Wege, aber ohne offenen Verrat - Bittersüßes Ende.")
-        print("Die Vice City Dragons Saga ist beendet. Du bist frei!")
+        print("Die Saga von Drachen im Asphalt ist beendet. Du bist frei!")
         
         self.dragon_defeated = True
         self.finalize_run("victory")
@@ -2421,7 +2425,10 @@ class Protagonist:
         }
         
         try:
-            self.persistence.save_protagonist(self, filename)
+            save_path = Path(filename)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(save_path, "w", encoding="utf-8") as handle:
+                json.dump(save_data, handle, ensure_ascii=False, indent=2)
             print(f"Spiel gespeichert als {filename}!")
         except Exception as e:
             print(f"Fehler beim Speichern: {e}")
