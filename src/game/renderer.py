@@ -4,7 +4,7 @@ from __future__ import annotations
 class GameRenderer:
     def render_start_menu(self):
         print("=== WILLKOMMEN IN VICE CITY DRAGONS! ===")
-        print("Ein kriminelles Abenteuer inspiriert von GTA 6")
+        print("Ein textbasiertes Krimi-Abenteuer in einer fiktiven Küstenmetropole")
         print("1. Neues Spiel starten")
         print("2. Spiel laden")
 
