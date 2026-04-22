@@ -37,6 +37,7 @@ class GameState:
     story_flags: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_STORY_FLAGS))
     clear_screen_enabled: bool = False
     time_cycle: dict[str, Any] = field(default_factory=lambda: DayNightCycle().to_dict())
+    achievements: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -67,6 +68,7 @@ class GameState:
             story_flags=flags,
             clear_screen_enabled=raw_data.get("clear_screen_enabled", False),
             time_cycle=raw_data.get("time_cycle", DayNightCycle().to_dict()),
+            achievements=raw_data.get("achievements", {}),
         )
 
     @classmethod
@@ -92,4 +94,5 @@ class GameState:
             story_flags=dict(protagonist.story_flags),
             clear_screen_enabled=protagonist.text_display.clear_screen_enabled,
             time_cycle=protagonist.district_manager.time_cycle.to_dict(),
+            achievements=protagonist.achievement_manager.to_dict(),
         )
