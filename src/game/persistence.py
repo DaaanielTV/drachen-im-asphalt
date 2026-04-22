@@ -62,6 +62,7 @@ class GamePersistence:
         protagonist.dragon_defeated = state.dragon_defeated
         protagonist.story_flags = state.story_flags
         protagonist.text_display.clear_screen_enabled = state.clear_screen_enabled
+        protagonist.district_manager.load_from_dict(state.time_cycle)
         return True
 
     def save_dragon(self, dragon: ViceCityDragon, filename: str = "data/dragon.json") -> bool:

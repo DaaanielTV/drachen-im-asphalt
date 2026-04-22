@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from src.time.day_night_cycle import DayNightCycle
+
 
 DEFAULT_STORY_FLAGS = {
     "first_crime_committed": False,
@@ -34,6 +36,7 @@ class GameState:
     dragon_defeated: bool = False
     story_flags: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_STORY_FLAGS))
     clear_screen_enabled: bool = False
+    time_cycle: dict[str, Any] = field(default_factory=lambda: DayNightCycle().to_dict())
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -63,6 +66,7 @@ class GameState:
             dragon_defeated=raw_data.get("dragon_defeated", False),
             story_flags=flags,
             clear_screen_enabled=raw_data.get("clear_screen_enabled", False),
+            time_cycle=raw_data.get("time_cycle", DayNightCycle().to_dict()),
         )
 
     @classmethod
@@ -87,4 +91,5 @@ class GameState:
             dragon_defeated=getattr(protagonist, "dragon_defeated", False),
             story_flags=dict(protagonist.story_flags),
             clear_screen_enabled=protagonist.text_display.clear_screen_enabled,
+            time_cycle=protagonist.district_manager.time_cycle.to_dict(),
         )

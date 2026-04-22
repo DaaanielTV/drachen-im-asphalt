@@ -120,6 +120,7 @@ class Protagonist:
     def display_attributes(self):
         self.update_run_tracking()
         print(f"\n[SPIELER] {self.name.upper()} - {self.character_type.upper()}")
+        print(f"[ZEIT] {self.district_manager.get_time_display()}")
         print(f"[CASH] Cash: ${self.cash}")
         print(f"[LEVEL] Level: {self.level}")
         print(f"[AUSDAUER] Ausdauer: {self.stamina}")
@@ -132,6 +133,8 @@ class Protagonist:
         print(f"[PARTNER] Partner-Vertrauen: {self.partner_trust}%")
         print(f"[MODUS] NG+ aktiv: {'Ja' if self.new_game_plus_active else 'Nein'} (Zyklus {self.new_game_plus_cycle})")
         print(f"[MODIFIER] Missionen: {self.mission_modifier} | Distrikte: {self.district_condition}")
+        print(f"[SAISON] {self.district_manager.seasonal_events[self.district_manager.current_season]['name']}")
+        print(f"[POLIZEI] Aktivität: {self.district_manager.get_police_multiplier():.2f}x")
         if self.ankle_monitor:
             print("[FUSSFESSEL] Fußfessel aktiv (Einschränkungen bei Aktivitäten)")
         print("\n[REPUTATION] Distrikt-Reputation:")
@@ -294,23 +297,27 @@ class Protagonist:
         self.days += 1
         self.stamina = self.level * 25
         self.wanted_level = max(0, self.wanted_level - 1)
+        self.district_manager.advance_time(6)
         self.update_psychological_state(context="rest")
         self.apply_delayed_consequences()
-        
+
         if self.dragon_encounters > 0 and random.random() < (0.2 + self.hallucination_intensity * 0.3):
             dragon = DragonHallucination()
             dragon.trigger_encounter("high_stress", self, self.hallucination_intensity)
-            
+
         print(f"Ausdauer wiederhergestellt: {self.stamina}")
         if self.wanted_level > 0:
             print(f"Wanted Level gesunken: {self.wanted_level}")
+
+    def _show_time_display(self):
+        time_display = self.district_manager.get_time_display()
+        print(f"\n[ZEIT] {time_display}")
     
     def explore_vice_city(self):
-        self.district_manager.update_season()
-        
         districts = list(self.district_manager.districts.values())
-        
+
         print("\nWähle einen Stadtteil in Vice City:")
+        print(f"[ZEIT] {self.district_manager.get_time_display()}")
         for i, district in enumerate(districts):
             feature_indicator = "[ACTIVE]" if district.special_feature in district.discovered_features else "[LOCKED]"
             print(f"{i+1}. {district.name} ({'*' * district.danger_level}) {feature_indicator}")
@@ -360,22 +367,29 @@ class Protagonist:
     
     def explore_district_regular(self, district):
         self.current_district_context = district.name
+        self._show_time_display()
+
         if self.ankle_monitor and random.random() < 0.3:
             print("\n[FUSSFESSEL] Deine Fußfessel schlägt Alarm! Die Polizei ist auf dem Weg!")
             self.wanted_level = min(5, self.wanted_level + 2)
             self.stamina = max(1, self.stamina - 5)
+            self.district_manager.advance_time(1)
             return
 
         if self.trigger_world_event(district):
+            self.district_manager.advance_time(2)
             return
 
-        encounter_chance = 0.3 + (district.danger_level * 0.1)
-        
-        if random.random() < encounter_chance:
+        base_encounter = 0.3 + (district.danger_level * 0.1)
+        encounter_chance = self.district_manager.get_encounter_chance(base_encounter)
+
+        night_bonus = 0.15 if self.district_manager.time_cycle.is_night else 0.0
+        if random.random() < encounter_chance + night_bonus:
             self.criminal_encounter(district)
         else:
             print("\n[STADT] Die Straße ist ruhig. Du findest nichts Nützliches hier.")
             self.stamina = max(1, self.stamina - 2)
+        self.district_manager.advance_time(1)
 
     def _get_player_progress_score(self):
         completed_missions = len(self.story_flags.get("completed_missions", []))
@@ -452,8 +466,11 @@ class Protagonist:
             self.stamina = max(1, self.stamina - 10)
 
     def police_checkpoint_event(self, district, progress_score):
-        print("[CHECKPOINT] Polizeikontrolle blockiert mehrere Ausgänge.")
+        police_multiplier = self.district_manager.get_police_multiplier()
+        print(f"[CHECKPOINT] Polizeikontrolle blockiert mehrere Ausgänge. (Polizei-Präsenz: {police_multiplier:.1f}x)")
         evade_chance = 0.35 + (self.stealth * 0.02) + min(0.12, progress_score * 0.01) - (self.wanted_level * 0.08)
+        if self.district_manager.time_cycle.is_night:
+            evade_chance -= 0.1
         if random.random() < evade_chance:
             print("Du umgehst den Checkpoint über Seitenstraßen.")
             self.reputation += 1
@@ -503,10 +520,12 @@ class Protagonist:
 
     def market_opportunity_event(self, district, progress_score):
         season = self.district_manager.current_season
-        print("[MARKT] Ein temporäres Schwarzmarktfenster öffnet sich.")
+        time_multiplier = self.district_manager.get_market_price_multiplier()
+        time_label = "Nacht" if self.district_manager.time_cycle.is_night else self.district_manager.time_cycle.period_name
+        print(f"[MARKT] Ein temporäres Schwarzmarktfenster öffnet sich ({time_label}: {time_multiplier:.1f}x Preise).")
         seasonal_bonus = 1.25 if season == "high_season" else 0.8 if season == "low_season" else 1.0
         base_profit = random.randint(90, 320)
-        adjusted_profit = int((base_profit + (district.danger_level * 12)) * seasonal_bonus)
+        adjusted_profit = int((base_profit + (district.danger_level * 12)) * seasonal_bonus * time_multiplier)
         risk = 0.2 + (self.wanted_level * 0.07)
         action = input("Chance nutzen? (ja/nein) ")
         if action != "ja":

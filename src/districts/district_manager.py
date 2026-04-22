@@ -1,4 +1,5 @@
 from src.districts.district import District
+from src.time.day_night_cycle import DayNightCycle
 
 
 class DistrictManager:
@@ -6,6 +7,7 @@ class DistrictManager:
         self.protagonist = protagonist
         self.districts = {}
         self.seasonal_events = {}
+        self.time_cycle = DayNightCycle()
         self.initialize_districts()
         
     def initialize_districts(self):
@@ -125,14 +127,59 @@ class DistrictManager:
                 "swamp_base": {"level": 8, "reputation": 70},
                 "island_smuggling": {"level": 9, "reputation": 80}
             }
-            
+
             requirements = unlock_requirements.get(district.special_feature, {"level": 1, "reputation": 0})
-            
-            if (self.protagonist.level >= requirements["level"] and 
+
+            if (self.protagonist.level >= requirements["level"] and
                 self.protagonist.reputation >= requirements["reputation"] and
                 district.special_feature not in district.discovered_features):
-                
+
                 if district.unlock_feature():
                     print(f"\n[UNLOCK] NEUES FEATURE FREIGESCHALTET: {district.get_special_feature_description()} in {district_name}!")
                     return True
         return False
+
+    def get_police_multiplier(self):
+        season = self.seasonal_events.get(self.current_season, {})
+        season_mod = season.get("police_multiplier", 1.0)
+        time_mod = self.time_cycle.police_modifier
+        return season_mod * time_mod
+
+    def get_encounter_chance(self, base_chance):
+        time_mod = self.time_cycle.encounter_modifier
+        return base_chance * time_mod
+
+    def get_market_price_multiplier(self):
+        time_mod = self.time_cycle.market_price_modifier
+        return time_mod
+
+    def get_danger_level(self, base_danger):
+        time_mod = self.time_cycle.danger_modifier
+        return int(base_danger * time_mod)
+
+    def advance_time(self, hours):
+        old_period = self.time_cycle.period
+        self.time_cycle.advance_hours(hours)
+        new_period = self.time_cycle.period
+        if old_period != new_period:
+            print(f"\n[ZEIT] {self.time_cycle.get_time_display()}")
+            print(f"  {self.time_cycle.get_narrative_flavor()}")
+        self.update_season()
+
+    def get_time_display(self):
+        return self.time_cycle.get_time_display()
+
+    def to_dict(self):
+        return {
+            "time_cycle": self.time_cycle.to_dict(),
+            "current_season": self.current_season,
+            "season_day_counter": self.season_day_counter
+        }
+
+    def load_from_dict(self, data):
+        if "time_cycle" in data:
+            self.time_cycle = DayNightCycle.from_dict(data["time_cycle"])
+        if "current_season" in data:
+            self.current_season = data["current_season"]
+        if "season_day_counter" in data:
+            self.season_day_counter = data["season_day_counter"]
