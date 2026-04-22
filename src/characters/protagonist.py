@@ -17,6 +17,7 @@ from src.effects.drug_effect import DrugEffect
 from src.effects.dragon_hallucination import DragonHallucination
 from src.items.weapon import Weapon
 from src.characters.dragon import ViceCityDragon
+from src.achievements.achievement import AchievementManager
 
 
 class Location:
@@ -89,6 +90,8 @@ class Protagonist:
         self.persistence = GamePersistence()
         self.district_manager = DistrictManager(self)
         self.current_district_context = None
+        self.achievement_manager = AchievementManager()
+        self.story_flags["explored_districts"] = []
         
         if character_type == "jason":
             self.combat_skill = 15
@@ -120,6 +123,7 @@ class Protagonist:
     def display_attributes(self):
         self.update_run_tracking()
         print(f"\n[SPIELER] {self.name.upper()} - {self.character_type.upper()}")
+        print(f"[ZEIT] {self.district_manager.get_time_display()}")
         print(f"[CASH] Cash: ${self.cash}")
         print(f"[LEVEL] Level: {self.level}")
         print(f"[AUSDAUER] Ausdauer: {self.stamina}")
@@ -132,6 +136,8 @@ class Protagonist:
         print(f"[PARTNER] Partner-Vertrauen: {self.partner_trust}%")
         print(f"[MODUS] NG+ aktiv: {'Ja' if self.new_game_plus_active else 'Nein'} (Zyklus {self.new_game_plus_cycle})")
         print(f"[MODIFIER] Missionen: {self.mission_modifier} | Distrikte: {self.district_condition}")
+        print(f"[SAISON] {self.district_manager.seasonal_events[self.district_manager.current_season]['name']}")
+        print(f"[POLIZEI] Aktivität: {self.district_manager.get_police_multiplier():.2f}x")
         if self.ankle_monitor:
             print("[FUSSFESSEL] Fußfessel aktiv (Einschränkungen bei Aktivitäten)")
         print("\n[REPUTATION] Distrikt-Reputation:")
@@ -252,6 +258,39 @@ class Protagonist:
             "phase": phase_name,
             "choice": choice_text
         })
+
+    def check_achievements(self):
+        achievements_to_check = [
+            "first_crime", "first_money", "first_rest", "first_district",
+            "explore_all_districts", "first_arrest", "most_wanted",
+            "first_mission", "five_missions", "ten_missions",
+            "first_betrayal", "first_drug", "dragon_seen", "five_dragons",
+            "ten_dragons", "rich", "very_rich", "first_level_up",
+            "level_5", "level_10", "first_win"
+        ]
+        for ach_id in achievements_to_check:
+            if self.achievement_manager.check_and_unlock(ach_id, self):
+                ach = self.achievement_manager.achievements[ach_id]
+                print(f"\n[ERFOLG] {ach.name} freigeschaltet!")
+                print(f"  {ach.description}")
+
+    def display_achievements(self):
+        print("\n=== ERFOLGE ===")
+        unlocked = self.achievement_manager.get_unlocked_count()
+        total = self.achievement_manager.get_total_count()
+        print(f"Freigeschaltet: {unlocked}/{total}\n")
+
+        for category in sorted(self.achievement_manager.get_categories()):
+            achievements = self.achievement_manager.get_by_category(category)
+            print(f"[{category}]")
+            for ach in sorted(achievements, key=lambda x: x.unlocked, reverse=True):
+                status = "[X]" if ach.unlocked else "[ ]"
+                name = ach.name if ach.unlocked or not ach.secret else "???"
+                desc = ach.description if ach.unlocked or not ach.secret else "Geheim"
+                print(f"  {status} {name}")
+                if ach.unlocked and ach.unlocked_at_day is not None:
+                    print(f"      Freigeschaltet an Tag {ach.unlocked_at_day}")
+            print()
     
     def get_mission_success_modifier(self):
         modifiers = {
@@ -294,23 +333,28 @@ class Protagonist:
         self.days += 1
         self.stamina = self.level * 25
         self.wanted_level = max(0, self.wanted_level - 1)
+        self.district_manager.advance_time(6)
         self.update_psychological_state(context="rest")
         self.apply_delayed_consequences()
-        
+        self.check_achievements()
+
         if self.dragon_encounters > 0 and random.random() < (0.2 + self.hallucination_intensity * 0.3):
             dragon = DragonHallucination()
             dragon.trigger_encounter("high_stress", self, self.hallucination_intensity)
-            
+
         print(f"Ausdauer wiederhergestellt: {self.stamina}")
         if self.wanted_level > 0:
             print(f"Wanted Level gesunken: {self.wanted_level}")
+
+    def _show_time_display(self):
+        time_display = self.district_manager.get_time_display()
+        print(f"\n[ZEIT] {time_display}")
     
     def explore_vice_city(self):
-        self.district_manager.update_season()
-        
         districts = list(self.district_manager.districts.values())
-        
+
         print("\nWähle einen Stadtteil in Vice City:")
+        print(f"[ZEIT] {self.district_manager.get_time_display()}")
         for i, district in enumerate(districts):
             feature_indicator = "[ACTIVE]" if district.special_feature in district.discovered_features else "[LOCKED]"
             print(f"{i+1}. {district.name} ({'*' * district.danger_level}) {feature_indicator}")
@@ -329,11 +373,17 @@ class Protagonist:
     def explore_district(self, district):
         self.current_district_context = district.name
         district.describe()
-        
+
+        if district.name not in self.story_flags.get("explored_districts", []):
+            self.story_flags.setdefault("explored_districts", []).append(district.name)
+            print(f"\n[NEU] Du hast {district.name} zum ersten Mal erkundet!")
+
         if district.special_feature in district.discovered_features:
             self.handle_district_feature(district)
+            self.check_achievements()
             return
         self.explore_district_regular(district)
+        self.check_achievements()
     
     def handle_district_feature(self, district):
         if district.special_feature == "tourism_season":
@@ -360,22 +410,29 @@ class Protagonist:
     
     def explore_district_regular(self, district):
         self.current_district_context = district.name
+        self._show_time_display()
+
         if self.ankle_monitor and random.random() < 0.3:
             print("\n[FUSSFESSEL] Deine Fußfessel schlägt Alarm! Die Polizei ist auf dem Weg!")
             self.wanted_level = min(5, self.wanted_level + 2)
             self.stamina = max(1, self.stamina - 5)
+            self.district_manager.advance_time(1)
             return
 
         if self.trigger_world_event(district):
+            self.district_manager.advance_time(2)
             return
 
-        encounter_chance = 0.3 + (district.danger_level * 0.1)
-        
-        if random.random() < encounter_chance:
+        base_encounter = 0.3 + (district.danger_level * 0.1)
+        encounter_chance = self.district_manager.get_encounter_chance(base_encounter)
+
+        night_bonus = 0.15 if self.district_manager.time_cycle.is_night else 0.0
+        if random.random() < encounter_chance + night_bonus:
             self.criminal_encounter(district)
         else:
             print("\n[STADT] Die Straße ist ruhig. Du findest nichts Nützliches hier.")
             self.stamina = max(1, self.stamina - 2)
+        self.district_manager.advance_time(1)
 
     def _get_player_progress_score(self):
         completed_missions = len(self.story_flags.get("completed_missions", []))
@@ -452,8 +509,11 @@ class Protagonist:
             self.stamina = max(1, self.stamina - 10)
 
     def police_checkpoint_event(self, district, progress_score):
-        print("[CHECKPOINT] Polizeikontrolle blockiert mehrere Ausgänge.")
+        police_multiplier = self.district_manager.get_police_multiplier()
+        print(f"[CHECKPOINT] Polizeikontrolle blockiert mehrere Ausgänge. (Polizei-Präsenz: {police_multiplier:.1f}x)")
         evade_chance = 0.35 + (self.stealth * 0.02) + min(0.12, progress_score * 0.01) - (self.wanted_level * 0.08)
+        if self.district_manager.time_cycle.is_night:
+            evade_chance -= 0.1
         if random.random() < evade_chance:
             print("Du umgehst den Checkpoint über Seitenstraßen.")
             self.reputation += 1
@@ -503,10 +563,12 @@ class Protagonist:
 
     def market_opportunity_event(self, district, progress_score):
         season = self.district_manager.current_season
-        print("[MARKT] Ein temporäres Schwarzmarktfenster öffnet sich.")
+        time_multiplier = self.district_manager.get_market_price_multiplier()
+        time_label = "Nacht" if self.district_manager.time_cycle.is_night else self.district_manager.time_cycle.period_name
+        print(f"[MARKT] Ein temporäres Schwarzmarktfenster öffnet sich ({time_label}: {time_multiplier:.1f}x Preise).")
         seasonal_bonus = 1.25 if season == "high_season" else 0.8 if season == "low_season" else 1.0
         base_profit = random.randint(90, 320)
-        adjusted_profit = int((base_profit + (district.danger_level * 12)) * seasonal_bonus)
+        adjusted_profit = int((base_profit + (district.danger_level * 12)) * seasonal_bonus * time_multiplier)
         risk = 0.2 + (self.wanted_level * 0.07)
         action = input("Chance nutzen? (ja/nein) ")
         if action != "ja":
@@ -913,7 +975,7 @@ class Protagonist:
         print("\n[DROGEN] DROGEN-ANGEBOT")
         self.update_psychological_state(context="drug_offer")
         action = input("Möchtest du Drogen kaufen oder ablehnen? (kaufen/ablehnen) ")
-        
+
         if action == "kaufen":
             if self.cash >= 100:
                 self.cash -= 100
@@ -927,13 +989,14 @@ class Protagonist:
                 self.drug_effects.append(effect)
                 print(f"Du kaufst {drug['name']} für $100!")
                 self.stress_level = min(100, self.stress_level + int(drug["intensity"] * 12))
-                
+
                 if drug["intensity"] > 0.6:
                     effect.trigger_dragon_hallucination(self)
-                    
+
                     if not self.story_flags["first_dragon_seen"]:
                         self.story_flags["first_dragon_seen"] = True
                         self.story_manager.trigger_story_event("first_dragon", self)
+                self.check_achievements()
             else:
                 print("Du hast nicht genug Geld für Drogen!")
         else:

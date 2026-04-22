@@ -185,29 +185,32 @@ def game_loop(protagonist, dragon):
         print("3. Vice City erkunden")
         print("4. Schwarzmarkt besuchen")
         print("5. Kriminelles Training")
-        print("6. Mission-Brett (Neu!)")
+        print("6. Mission-Brett")
         print("7. Journal & Quest-Log")
-        print("8. Drachen der Konsequenzen konfrontieren")
-        print("9. Bildschirm-Löschung umschalten")
-        print("10. Spiel speichern")
-        print("11. Spiel beenden")
-        choice = input("Waehle eine Aktion (1-11): ")
-        
+        print("8. Erfolge")
+        print("9. Drachen der Konsequenzen konfrontieren")
+        print("10. Bildschirm-Loeschung umschalten")
+        print("11. Spiel speichern")
+        print("12. Spiel beenden")
+        choice = input("Waehle eine Aktion (1-12): ")
+
         if choice == "1":
             protagonist.display_attributes()
-        elif action == "rest":
+        elif choice == "2":
             protagonist.rest()
-        elif action == "erk":
+        elif choice == "3":
             protagonist.explore_vice_city()
-        elif action == "markt":
+        elif choice == "4":
             protagonist.visit_black_market()
-        elif action == "train":
+        elif choice == "5":
             protagonist.criminal_training()
-        elif action == "mission":
+        elif choice == "6":
             protagonist.visit_mission_board()
         elif choice == "7":
             protagonist.open_journal()
         elif choice == "8":
+            protagonist.display_achievements()
+        elif choice == "9":
             protagonist.confront_dragon(dragon)
             protagonist.save_dragon(dragon)
             if protagonist.run_completed:
@@ -222,26 +225,20 @@ def game_loop(protagonist, dragon):
                 print("\n*** VICE CITY DRAGONS BEENDET! ***")
                 print("Danke fuers Spielen dieser kriminellen Saga!")
                 break
-        elif choice == "9":
-            protagonist.text_display.toggle_clear_screen()
         elif choice == "10":
+            protagonist.text_display.toggle_clear_screen()
+        elif choice == "11":
             protagonist.save_game()
             protagonist.save_dragon(dragon)
-        elif choice == "11":
+        elif choice == "12":
             save_choice = input("Moechtest du vor dem Beenden speichern? (j/n) ")
             if save_choice.lower() == "j":
                 protagonist.save_game()
                 protagonist.save_dragon(dragon)
             print("Auf Wiedersehen, Krimineller!")
             break
-        elif choice == "11" and protagonist.ng_plus_unlocked:
-            protagonist.show_endgame_summary()
-        elif choice == "12" and protagonist.ng_plus_unlocked:
-            if protagonist.start_new_game_plus():
-                dragon = ViceCityDragon()
-                protagonist.save_dragon(dragon)
         else:
-            print("Ungültige Wahl, bitte versuche es erneut.")
+            print("Ungueltige Wahl, bitte versuche es erneut.")
 
 
 if __name__ == "__main__":
