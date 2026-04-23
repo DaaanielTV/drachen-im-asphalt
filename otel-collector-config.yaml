@@ -1,0 +1,72 @@
+receivers:
+  otlp:
+    endpoint: 0.0.0.0:4317
+    protocols:
+      grpc:
+      http:
+
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+      memory:
+      disk:
+      network:
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1000
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  resource:
+    attributes:
+      - key: service.version
+        value: "1.0.0"
+        action: upsert
+
+exporters:
+  elasticsearch:
+    endpoint: ${ES_ENDPOINT:-http://elasticsearch:9200}
+    apikey: ${ES_APIKEY:-}
+    cloudid: ${ES_CLOUDID:-}
+    index:
+      prefixes:
+        traces: "traces-"
+        metrics: "metrics-"
+        logs: "logs-"
+      logs_dataset: "drachen-im-asphalt"
+      metrics_dataset: "drachen-im-asphalt"
+      traces_dataset: "drachen-im-asphalt"
+
+  prometheus:
+    endpoint: ":8889"
+    namespace: otel
+    const_labels:
+      service: drachen-im-asphalt
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [elasticsearch]
+
+    metrics:
+      receivers: [otlp, hostmetrics]
+      processors: [memory_limiter, batch, resource]
+      exporters: [elasticsearch, prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [elasticsearch]
+
+  telemetry:
+    logs:
+      level: info
+      processors: [batch]

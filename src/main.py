@@ -1,5 +1,13 @@
+import time as time_module
+
 from src.game.renderer import GameRenderer
 from src.game.session import GameSession
+from src.telemetry import initialize_telemetry, shutdown_telemetry
+from src.telemetry import metrics as telemetrics
+from src.telemetry import settings as teleSettings
+from src.telemetry.logging import get_logger
+
+_telemetry_logger = get_logger(__name__)
 
 
 def show_main_help(protagonist):
@@ -96,7 +104,49 @@ def _handle_readability_menu(protagonist):
     protagonist.text_display.set_readability_mode(mode)
 
 
+def _handle_telemetry_menu():
+    settings = teleSettings.load_user_settings()
+    enabled = settings.get("telemetry_enabled", True)
+    log_enabled = settings.get("logging_enabled", True)
+    log_level = settings.get("log_level", "INFO")
+
+    print("\n[TELEMETRIE] Einstellungen:")
+    print(f"1) Telemetrie aktiviert:  {'Ja' if enabled else 'Nein'}")
+    print(f"2) Logging aktiviert:   {'Ja' if log_enabled else 'Nein'}")
+    print(f"3) Log-Level:          {log_level}")
+    print("4) Einstellungen zuruecksetzen")
+    print("0) Zurueck")
+
+    choice = input("Auswahl: ").strip()
+
+    if choice == "1":
+        new_enabled = not enabled
+        teleSettings.set_telemetry_enabled(new_enabled)
+        print(f"Telemetrie {'aktiviert' if new_enabled else 'deaktiviert'}.")
+    elif choice == "2":
+        new_log_enabled = not log_enabled
+        teleSettings.set_logging_enabled(new_log_enabled)
+        print(f"Logging {'aktiviert' if new_log_enabled else 'deaktiviert'}.")
+    elif choice == "3":
+        print("\nLog-Level: DEBUG, INFO, WARNING, ERROR, CRITICAL")
+        level_input = input("Neuer Level: ").strip().upper()
+        if level_input in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            teleSettings.set_log_level(level_input)
+            print(f"Log-Level auf {level_input} gesetzt.")
+        else:
+            print("Ungueltiger Level, keine Aenderung.")
+    elif choice == "4":
+        teleSettings.reset_settings()
+        print("Einstellungen zurueckgesetzt.")
+    elif choice == "0":
+        return
+    else:
+        print("Ungueltige Wahl.")
+
+
 def main():
+    initialize_telemetry()
+
     renderer = GameRenderer()
     session = GameSession(renderer=renderer)
 
@@ -163,6 +213,14 @@ def main():
 
 
 def game_loop(protagonist, dragon):
+    start_time = time_module.time()
+
+    telemetrics.record_session_start(
+        player_name=protagonist.name,
+        character_type=protagonist.character_type,
+    )
+    telemetrics.set_player_level(protagonist.level)
+
     command_aliases = {
         "1": "attr", "attr": "attr",
         "2": "rest", "rest": "rest",
@@ -176,6 +234,7 @@ def game_loop(protagonist, dragon):
         "10": "hilfe", "hilfe": "hilfe",
         "11": "save", "save": "save",
         "12": "exit", "exit": "exit",
+        "13": "telem", "telem": "telem",
     }
 
     while True:
@@ -192,7 +251,12 @@ def game_loop(protagonist, dragon):
         print("10. Bildschirm-Loeschung umschalten")
         print("11. Spiel speichern")
         print("12. Spiel beenden")
-        choice = input("Waehle eine Aktion (1-12): ")
+        print("13. Telemetrie-Einstellungen    (telem)")
+        choice = input("Waehle eine Aktion (1-13): ")
+        command = command_aliases.get(choice, None)
+
+        if command:
+            telemetrics.record_command(command)
 
         if choice == "1":
             protagonist.display_attributes()
@@ -224,6 +288,9 @@ def game_loop(protagonist, dragon):
                             continue
                 print("\n*** VICE CITY DRAGONS BEENDET! ***")
                 print("Danke fuers Spielen dieser kriminellen Saga!")
+                duration = time_module.time() - start_time
+                telemetrics.record_session_duration(duration)
+                shutdown_telemetry()
                 break
         elif choice == "10":
             protagonist.text_display.toggle_clear_screen()
@@ -235,8 +302,13 @@ def game_loop(protagonist, dragon):
             if save_choice.lower() == "j":
                 protagonist.save_game()
                 protagonist.save_dragon(dragon)
+            duration = time_module.time() - start_time
+            telemetrics.record_session_duration(duration)
             print("Auf Wiedersehen, Krimineller!")
+            shutdown_telemetry()
             break
+        elif choice == "13":
+            _handle_telemetry_menu()
         else:
             print("Ungueltige Wahl, bitte versuche es erneut.")
 
