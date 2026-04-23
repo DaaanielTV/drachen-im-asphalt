@@ -56,7 +56,40 @@ class GameCommandHandler:
                 self.protagonist.save_dragon(self.dragon)
             print("Auf Wiedersehen, Krimineller!")
             return False
+        elif choice == "h":
+            self._record_command("hints")
+            hints = self.protagonist.hint_system.get_contextual_hints(self.protagonist)
+            if hints:
+                for hint in hints:
+                    self.protagonist.hint_system.show_hint(hint)
+            else:
+                print("\n[INFO] Keine Hinweise verfügbar.")
+        elif choice == "t":
+            self._record_command("tutorial")
+            self.protagonist.hint_system.enable_tutorial_mode()
+            print("\n[TUTORIAL] Tutorial-Modus aktiviert!")
         else:
             self._record_command("invalid")
             print("Ungültige Wahl, bitte versuche es erneut.")
         return True
+
+    def get_menu_display(self) -> str:
+        base_menu = """[AKTIONEN] Was moechtest du tun?
+
+  1. Attribute anzeigen
+  2. Ausruhen
+  3. Erkunden
+  4. Schwarzmarkt besuchen
+  5. Kriminelles Training
+  6. Missionsbrett
+  7. Den Drachen konfrontieren
+  8. Bildschirm-Loeschung umschalten
+  9. Spielstand speichern
+  10. Spiel beenden"""
+
+        if hasattr(self.protagonist, 'hint_system') and self.protagonist.hint_system.tutorial_mode:
+            base_menu += """
+  h. Hinweise anzeigen
+  t. Tutorial-Modus"""
+
+        return base_menu
