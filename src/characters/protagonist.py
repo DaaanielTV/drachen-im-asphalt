@@ -4,6 +4,7 @@ import random
 from pathlib import Path
 
 from src.ui.text_display import TextDisplayManager
+from src.ui.hints import HintSystem
 from src.story.story_manager import StoryManager
 from src.story.journal import Journal
 from src.story.consequence_manager import ConsequenceManager
@@ -72,6 +73,7 @@ class Protagonist:
         }
         
         self.text_display = TextDisplayManager()
+        self.hint_system = HintSystem()
         self.story_manager = StoryManager(self.text_display)
         self.journal = Journal()
         self.story_flags = {

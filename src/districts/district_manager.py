@@ -74,7 +74,35 @@ class DistrictManager:
                 6,
                 ["schwarzmarkt", "people_smuggling"],
                 "island_smuggling"
-            )
+            ),
+            "Industrial Zone": District(
+                "Industrial Zone",
+                "Fabriken, Lagerhallen und verlassene Gebäude. Hier verstecken sich die Schatten der Gesellschaft.",
+                6,
+                ["warehouse_heists", "equipment_theft", "labor_exploitation"],
+                "industrial_zone"
+            ),
+            "Airport": District(
+                "Airport",
+                "Der internationale Flughafen von Vice City. Kontrollzonen, Frachtdepots und geheime Landebahnen.",
+                8,
+                ["cargo_heists", "smuggling_routes", "aircraft_theft"],
+                "airport_operations"
+            ),
+            "Suburbs": District(
+                "Suburbs",
+                "Ruhige Vororte mit Einfamilienhäusern. Die perfekte Fassade für dunkle Geschäfte.",
+                4,
+                ["identity_theft", "burglary", "suburban_drug_run"],
+                "suburban_network"
+            ),
+            "Casino Strip": District(
+                "Casino Strip",
+                "Die Glitzermeile von Vice City. Casinos, Nachtclubs und hochkarätige Gaunereien.",
+                7,
+                ["casino_heists", "money_laundering", "high_stakes_gambling"],
+                "casino_empire"
+            ),
         }
         
         self.seasonal_events = {
